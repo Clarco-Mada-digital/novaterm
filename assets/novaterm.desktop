@@ -1,0 +1,17 @@
+[Desktop Entry]
+Type=Application
+Name=NovaTerm
+GenericName=Terminal
+Comment=Terminal moderne : onglets, splits, thèmes et transparence
+Exec=novaterm
+Icon=novaterm
+Terminal=false
+Categories=System;TerminalEmulator;Utility;
+Keywords=terminal;shell;console;prompt;command;
+StartupWMClass=novaterm
+StartupNotify=true
+Actions=new-window;
+
+[Desktop Action new-window]
+Name=Nouvelle fenêtre
+Exec=novaterm
