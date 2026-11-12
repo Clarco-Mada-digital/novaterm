@@ -1,0 +1,119 @@
+# Paquets NovaTerm pour Linux, Windows et macOS.
+#
+# Ne se lance PAS à chaque push, seulement :
+#   - quand un tag « v* » est envoyé (fait par ./packaging/release.sh) → Release GitHub ;
+#   - à la main (onglet Actions → Paquets → Run workflow) → fichiers en artefacts, sans Release.
+name: Paquets
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  check:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Le tag correspond à la version de Cargo.toml
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          version=$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1)
+          if [ "v$version" != "${GITHUB_REF_NAME}" ]; then
+            echo "::error::Le tag ${GITHUB_REF_NAME} ne correspond pas à la version $version de Cargo.toml"
+            exit 1
+          fi
+
+  linux:
+    needs: check
+    strategy:
+      fail-fast: false
+      matrix:
+        # Ubuntu 22.04 : glibc plus ancienne = binaires compatibles avec plus de distributions.
+        os: [ubuntu-22.04, ubuntu-22.04-arm]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Dépendances système
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential pkg-config libx11-dev libxcursor-dev libxrandr-dev \
+            libxi-dev libgl1-mesa-dev libxkbcommon-dev libwayland-dev rpm file
+      - name: Tests
+        run: cargo test --release
+      - name: Paquets (.deb, .AppImage, .tar.gz, .rpm)
+        run: ./packaging/build-linux.sh all
+      - uses: actions/upload-artifact@v4
+        with:
+          name: novaterm-${{ matrix.os }}
+          path: dist/*
+
+  windows:
+    needs: check
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Inno Setup
+        run: choco install innosetup -y --no-progress
+      - name: Paquets (.zip portable, installateur .exe)
+        shell: pwsh
+        run: ./packaging/build-windows.ps1
+      - uses: actions/upload-artifact@v4
+        with:
+          name: novaterm-windows
+          path: dist/*
+
+  macos:
+    needs: check
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin,x86_64-apple-darwin
+      - uses: Swatinem/rust-cache@v2
+      - name: Paquet universel Intel + Apple Silicon (.app dans un .dmg)
+        run: ./packaging/build-macos.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: novaterm-macos
+          path: dist/*
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [linux, windows, macos]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Notes de version (message du tag)
+        run: |
+          git fetch --force origin "refs/tags/${GITHUB_REF_NAME}:refs/tags/${GITHUB_REF_NAME}"
+          git tag -l --format='%(contents)' "${GITHUB_REF_NAME}" > notes.md
+          cat notes.md
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - name: Sommes de contrôle
+        run: cd dist && sha256sum * > SHA256SUMS.txt && cat SHA256SUMS.txt
+      - uses: softprops/action-gh-release@v2
+        with:
+          name: NovaTerm ${{ github.ref_name }}
+          body_path: notes.md
+          generate_release_notes: true
+          # Pré-version (bêta) : version « 0.0.x » ou contenant « - » (ex. 1.2.0-rc.1).
+          prerelease: ${{ contains(github.ref_name, '-') || startsWith(github.ref_name, 'v0.0.') }}
+          files: dist/*

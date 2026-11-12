@@ -82,6 +82,19 @@ pub enum Action {
     // Suggestions
     HistorySearch,
     ToggleSuggestions,
+    // Blocs de commandes
+    PrevCommand,
+    NextCommand,
+    CopyLastOutput,
+    CopyLastCommand,
+    RerunLast,
+    // Outils
+    ToggleBroadcast,
+    Snippets,
+    Profiles,
+    SaveProfile,
+    ImportTheme,
+    QuickTerminal,
 }
 
 pub const ALL_ACTIONS: &[Action] = &[
@@ -153,6 +166,17 @@ pub const ALL_ACTIONS: &[Action] = &[
     Action::Quit,
     Action::HistorySearch,
     Action::ToggleSuggestions,
+    Action::PrevCommand,
+    Action::NextCommand,
+    Action::CopyLastOutput,
+    Action::CopyLastCommand,
+    Action::RerunLast,
+    Action::ToggleBroadcast,
+    Action::Snippets,
+    Action::Profiles,
+    Action::SaveProfile,
+    Action::ImportTheme,
+    Action::QuickTerminal,
 ];
 
 impl Action {
@@ -228,6 +252,17 @@ impl Action {
             Quit => "quit",
             HistorySearch => "history_search",
             ToggleSuggestions => "toggle_suggestions",
+            PrevCommand => "prev_command",
+            NextCommand => "next_command",
+            CopyLastOutput => "copy_last_output",
+            CopyLastCommand => "copy_last_command",
+            RerunLast => "rerun_last",
+            ToggleBroadcast => "toggle_broadcast",
+            Snippets => "snippets",
+            Profiles => "profiles",
+            SaveProfile => "save_profile",
+            ImportTheme => "import_theme",
+            QuickTerminal => "quick_terminal",
         }
     }
 
@@ -307,6 +342,17 @@ impl Action {
             Quit => "Quitter NovaTerm",
             HistorySearch => "Rechercher dans l'historique des commandes",
             ToggleSuggestions => "Activer / désactiver les suggestions",
+            PrevCommand => "Commande précédente (remonter)",
+            NextCommand => "Commande suivante (descendre)",
+            CopyLastOutput => "Copier la sortie de la dernière commande",
+            CopyLastCommand => "Copier la dernière commande",
+            RerunLast => "Relancer la dernière commande",
+            ToggleBroadcast => "Taper dans tous les panneaux (diffusion)",
+            Snippets => "Commandes favorites (snippets)",
+            Profiles => "Ouvrir un profil de projet",
+            SaveProfile => "Enregistrer la disposition comme profil",
+            ImportTheme => "Importer un thème…",
+            QuickTerminal => "Terminal rapide (afficher / masquer)",
         }
     }
 
@@ -326,6 +372,8 @@ impl Action {
             }
             FontInc | FontDec | FontReset => "Police",
             HistorySearch | ToggleSuggestions => "Suggestions",
+            PrevCommand | NextCommand | CopyLastOutput | CopyLastCommand | RerunLast => "Blocs de commandes",
+            ToggleBroadcast | Snippets | Profiles | SaveProfile | ImportTheme | QuickTerminal => "Outils",
             _ => "Fenêtre",
         }
     }
@@ -335,6 +383,24 @@ impl Action {
     pub fn only_when_searching(self) -> bool {
         matches!(self, Action::FindNext | Action::FindPrev)
     }
+
+    /// L'action s'applique-t-elle dans ce contexte ? Sinon la touche part au programme.
+    pub fn context_ok(self, ctx: &KeyContext) -> bool {
+        match self {
+            Action::FindNext | Action::FindPrev => ctx.searching,
+            Action::PrevCommand | Action::NextCommand => ctx.prompt_nav,
+            _ => true,
+        }
+    }
+}
+
+/// État utile pour décider si un raccourci « contextuel » s'applique.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct KeyContext {
+    /// La barre de recherche est ouverte.
+    pub searching: bool,
+    /// Le panneau a des blocs de commandes et n'est pas en plein écran (vim, htop…).
+    pub prompt_nav: bool,
 }
 
 /// Une combinaison de touches (ex. Ctrl+Maj+T).
@@ -532,6 +598,17 @@ pub fn default_bindings(action: Action) -> Vec<KeyCombo> {
         Quit => &["Ctrl+Shift+Q"],
         HistorySearch => &["Ctrl+Alt+H"],
         ToggleSuggestions => &[],
+        PrevCommand => &["Ctrl+Up"],
+        NextCommand => &["Ctrl+Down"],
+        CopyLastOutput => &["Ctrl+Alt+C"],
+        CopyLastCommand => &[],
+        RerunLast => &[],
+        ToggleBroadcast => &["Ctrl+Shift+I"],
+        Snippets => &["Ctrl+Alt+S"],
+        Profiles => &["Ctrl+Alt+P"],
+        SaveProfile => &[],
+        ImportTheme => &[],
+        QuickTerminal => &[],
     };
     list.iter().map(|s| c(s)).collect()
 }
@@ -561,20 +638,18 @@ impl Bindings {
         Self { map }
     }
 
-    pub fn find(&self, key: Key, physical: Option<Key>, mods: &Modifiers, searching: bool) -> Option<Action> {
+    pub fn find(&self, key: Key, physical: Option<Key>, mods: &Modifiers, ctx: &KeyContext) -> Option<Action> {
         // Priorité à la touche logique exacte, puis aux chiffres physiques.
-        let exact = self.map.iter().find(|(a, combos)| {
-            (searching || !a.only_when_searching())
-                && combos.iter().any(|c| c.key == key && c.matches(key, None, mods))
-        });
+        let exact = self
+            .map
+            .iter()
+            .find(|(a, combos)| a.context_ok(ctx) && combos.iter().any(|c| c.key == key && c.matches(key, None, mods)));
         if let Some((a, _)) = exact {
             return Some(*a);
         }
         self.map
             .iter()
-            .find(|(a, combos)| {
-                (searching || !a.only_when_searching()) && combos.iter().any(|c| c.matches(key, physical, mods))
-            })
+            .find(|(a, combos)| a.context_ok(ctx) && combos.iter().any(|c| c.matches(key, physical, mods)))
             .map(|(a, _)| *a)
     }
 
@@ -628,15 +703,15 @@ mod tests {
     fn find_and_azerty_digits() {
         let b = Bindings::build(&BTreeMap::new());
         let m = Modifiers { ctrl: true, shift: true, ..Default::default() };
-        assert_eq!(b.find(Key::T, None, &m, false), Some(Action::NewTab));
+        assert_eq!(b.find(Key::T, None, &m, &KeyContext::default()), Some(Action::NewTab));
         // Alt+& (AZERTY) : touche logique inconnue → touche physique 1.
         let alt = Modifiers { alt: true, ..Default::default() };
-        assert_eq!(b.find(Key::Quote, Some(Key::Num3), &alt, false), Some(Action::GotoTab3));
+        assert_eq!(b.find(Key::Quote, Some(Key::Num3), &alt, &KeyContext::default()), Some(Action::GotoTab3));
         // F3 n'est intercepté que pendant une recherche.
-        assert_eq!(b.find(Key::F3, None, &Modifiers::default(), false), None);
-        assert_eq!(b.find(Key::F3, None, &Modifiers::default(), true), Some(Action::FindNext));
+        assert_eq!(b.find(Key::F3, None, &Modifiers::default(), &KeyContext::default()), None);
+        assert_eq!(b.find(Key::F3, None, &Modifiers::default(), &KeyContext { searching: true, prompt_nav: false }), Some(Action::FindNext));
         // Ctrl+C seul n'est pas un raccourci : il doit aller au terminal (SIGINT).
         let ctrl = Modifiers { ctrl: true, ..Default::default() };
-        assert_eq!(b.find(Key::C, None, &ctrl, false), None);
+        assert_eq!(b.find(Key::C, None, &ctrl, &KeyContext::default()), None);
     }
 }

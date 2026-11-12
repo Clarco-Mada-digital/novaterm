@@ -2,7 +2,7 @@
 name = "novaterm"
 version = "0.1.0"
 edition = "2021"
-description = "Terminal moderne pour Linux : onglets, splits, thèmes, transparence et fond d'image"
+description = "Terminal moderne : onglets, splits, suggestions, blocs de commandes, images, thèmes"
 license = "MIT"
 
 [dependencies]
@@ -13,9 +13,14 @@ portable-pty = "0.8"
 serde = { version = "1", features = ["derive"] }
 toml = "0.8"
 dirs = "6"
-image = { version = "0.25", default-features = false, features = ["png", "jpeg", "webp", "bmp"] }
+image = { version = "0.25", default-features = false, features = ["png", "jpeg", "webp", "bmp", "gif", "ico"] }
 arboard = "3"
 anyhow = "1"
+ab_glyph = "0.2"
+base64 = "0.22"
+flate2 = "1"
+memchr = "2"
+resvg = "0.45"
 
 [profile.release]
 opt-level = 3
@@ -23,3 +28,5 @@ lto = "fat"
 codegen-units = 1
 panic = "abort"
 strip = true
+[target.'cfg(windows)'.build-dependencies]
+winresource = "0.1"

@@ -6,6 +6,7 @@ use std::path::PathBuf;
 use serde::{Deserialize, Serialize};
 
 use crate::history::Ranking;
+use crate::session::Profile;
 use crate::theme::{self, Theme};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -87,6 +88,86 @@ impl BellMode {
             Self::Urgent => "Flash + attention de la fenêtre",
         }
     }
+}
+
+/// Badge de statut / durée sur les blocs de commandes.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum BadgeMode {
+    Always,
+    Notable,
+    Never,
+}
+
+impl BadgeMode {
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Always => "Toujours",
+            Self::Notable => "Échecs et commandes de plus de 2 s",
+            Self::Never => "Jamais",
+        }
+    }
+}
+
+/// Restauration de la session au démarrage.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum RestoreMode {
+    Off,
+    Layout,
+    LayoutAndContent,
+}
+
+impl RestoreMode {
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Off => "Non (nouvelle session vide)",
+            Self::Layout => "Onglets, splits, dossiers et noms",
+            Self::LayoutAndContent => "Tout, avec le texte affiché",
+        }
+    }
+}
+
+/// Changement automatique de thème clair / sombre.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum AutoTheme {
+    Off,
+    System,
+    Schedule,
+}
+
+impl AutoTheme {
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Off => "Désactivé",
+            Self::System => "Suivre le système",
+            Self::Schedule => "Selon l'heure",
+        }
+    }
+}
+
+/// Portée de la diffusion du clavier.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum BroadcastScope {
+    Tab,
+    All,
+}
+
+impl BroadcastScope {
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Tab => "Panneaux de l'onglet",
+            Self::All => "Tous les panneaux de tous les onglets",
+        }
+    }
+}
+
+/// Commande favorite (palette de commandes).
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Snippet {
+    pub name: String,
+    pub command: String,
+    /// Exécuter directement (sinon simplement insérer).
+    #[serde(default)]
+    pub run: bool,
 }
 
 /// Touche(s) pour accepter une suggestion.
@@ -235,6 +316,79 @@ pub struct Config {
     /// Débuts de commandes à ne jamais suggérer (un par ligne).
     pub suggest_ignore: String,
 
+    /// Complétion intelligente (sous-commandes, options, branches git, scripts npm…).
+    pub completions: bool,
+
+    // --- Blocs de commandes & notifications ---
+    pub blocks_enabled: bool,
+    /// Barre colorée à gauche de chaque commande (vert / rouge / en cours).
+    pub blocks_gutter: bool,
+    pub blocks_badges: BadgeMode,
+    /// Fine ligne de séparation entre les commandes.
+    pub blocks_separator: bool,
+    /// Boutons au survol d'un bloc (copier la sortie, relancer…).
+    pub blocks_actions: bool,
+    pub notify_long_commands: bool,
+    pub notify_threshold_secs: u32,
+    /// Notifier seulement si la fenêtre n'est pas au premier plan (ou l'onglet caché).
+    pub notify_only_unfocused: bool,
+    pub notify_sound: bool,
+    /// Autoriser les programmes à envoyer des notifications (OSC 9 / 777).
+    pub notify_from_apps: bool,
+    /// Pastille sur les onglets en arrière-plan qui ont du nouveau.
+    pub tab_activity: bool,
+
+    // --- Images ---
+    pub images_enabled: bool,
+    /// Protocole Kitty : autoriser la lecture d'images locales par chemin.
+    pub images_allow_files: bool,
+
+    // --- Session & profils ---
+    pub restore_session: RestoreMode,
+    pub restore_lines: usize,
+    /// Sauvegarde automatique de la session (secondes, 0 = seulement à la fermeture).
+    pub autosave_secs: u32,
+    pub profiles: Vec<Profile>,
+    /// Profil ouvert au démarrage (vide = aucun).
+    pub startup_profile: String,
+
+    // --- Liens & éditeur ---
+    /// Commande d'ouverture des fichiers ({file}, {line}, {col} ; vide = système).
+    pub editor_command: String,
+    /// Détecter les chemins de fichiers et traces d'erreur.
+    pub detect_paths: bool,
+    /// Ouvrir les liens d'un simple clic (sinon Ctrl+clic).
+    pub link_plain_click: bool,
+
+    // --- Terminal rapide ---
+    pub quake_height: f32,
+    pub quake_width: f32,
+    pub quake_hide_on_unfocus: bool,
+    pub quake_hotkey: String,
+
+    // --- Performances ---
+    /// Arrêter le clignotement du curseur après N secondes d'inactivité (0 = jamais).
+    pub cursor_blink_timeout: u32,
+
+    /// Proposer d'ajouter l'AppImage au menu au lancement.
+    pub appimage_prompt: bool,
+
+    // --- Sécurité ---
+    /// Les programmes peuvent copier dans le presse-papiers (OSC 52, vim, tmux…).
+    pub osc52_write: bool,
+    /// Les programmes peuvent lire le presse-papiers (OSC 52) — risqué via SSH.
+    pub osc52_read: bool,
+
+    // --- Divers ---
+    pub broadcast_scope: BroadcastScope,
+    pub snippets: Vec<Snippet>,
+    pub user_themes: Vec<Theme>,
+    pub auto_theme: AutoTheme,
+    pub light_theme: String,
+    pub dark_theme: String,
+    pub day_hour: u32,
+    pub night_hour: u32,
+
     /// Raccourcis personnalisés : action → combinaisons (liste vide = désactivé).
     pub keybindings: BTreeMap<String, Vec<String>>,
 }
@@ -304,6 +458,48 @@ impl Default for Config {
             history_zsh: true,
             history_bash: true,
             suggest_ignore: "rm -rf\n".to_string(),
+            completions: true,
+            blocks_enabled: true,
+            blocks_gutter: true,
+            blocks_badges: BadgeMode::Notable,
+            blocks_separator: true,
+            blocks_actions: true,
+            notify_long_commands: true,
+            notify_threshold_secs: 10,
+            notify_only_unfocused: true,
+            notify_sound: false,
+            notify_from_apps: true,
+            tab_activity: true,
+            images_enabled: true,
+            images_allow_files: true,
+            restore_session: RestoreMode::Layout,
+            restore_lines: 300,
+            autosave_secs: 60,
+            profiles: Vec::new(),
+            startup_profile: String::new(),
+            editor_command: crate::links::detect_editor(),
+            detect_paths: true,
+            link_plain_click: false,
+            quake_height: 0.45,
+            quake_width: 1.0,
+            quake_hide_on_unfocus: false,
+            quake_hotkey: "F12".to_string(),
+            cursor_blink_timeout: 15,
+            appimage_prompt: true,
+            osc52_write: true,
+            osc52_read: false,
+            broadcast_scope: BroadcastScope::Tab,
+            snippets: vec![
+                Snippet { name: "Espace disque".into(), command: "df -h".into(), run: true },
+                Snippet { name: "Processus les plus gourmands".into(), command: "ps aux --sort=-%cpu | head -15".into(), run: true },
+                Snippet { name: "Ports en écoute".into(), command: "ss -tulpn".into(), run: true },
+            ],
+            user_themes: Vec::new(),
+            auto_theme: AutoTheme::Off,
+            light_theme: "Solarized Light".to_string(),
+            dark_theme: "Nova Dark".to_string(),
+            day_hour: 7,
+            night_hour: 19,
         }
     }
 }
@@ -314,10 +510,30 @@ impl Config {
     }
 
     pub fn load() -> Self {
-        Self::path()
-            .and_then(|p| std::fs::read_to_string(p).ok())
-            .and_then(|s| toml::from_str(&s).ok())
-            .unwrap_or_default()
+        Self::load_checked().0
+    }
+
+    /// Charge la configuration. Un fichier invalide n'est jamais écrasé en silence :
+    /// il est mis de côté (`config.toml.invalide`) et un message est retourné.
+    pub fn load_checked() -> (Self, Option<String>) {
+        let Some(p) = Self::path() else { return (Self::default(), None) };
+        let Ok(text) = std::fs::read_to_string(&p) else { return (Self::default(), None) };
+        match toml::from_str(&text) {
+            Ok(c) => (c, None),
+            Err(e) => {
+                let backup = p.with_extension("toml.invalide");
+                let _ = std::fs::copy(&p, &backup);
+                let first = e.to_string().lines().next().unwrap_or_default().to_string();
+                (
+                    Self::default(),
+                    Some(format!(
+                        "Configuration invalide ({}) : réglages par défaut utilisés. Votre fichier est conservé dans « {} ».",
+                        first.replace("TOML parse error at", "erreur"),
+                        backup.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default()
+                    )),
+                )
+            }
+        }
     }
 
     pub fn save(&self) {
@@ -326,15 +542,26 @@ impl Config {
                 let _ = std::fs::create_dir_all(parent);
             }
             if let Ok(s) = toml::to_string_pretty(self) {
-                let _ = std::fs::write(p, s);
+                // Écriture atomique : jamais de fichier à moitié écrit.
+                let tmp = p.with_extension("toml.tmp");
+                if std::fs::write(&tmp, s).is_ok() {
+                    let _ = std::fs::rename(tmp, p);
+                }
             }
         }
     }
 
-    /// Thème actif : personnalisé sinon prédéfini.
+    /// Thème actif : personnalisé, sinon importé, sinon prédéfini.
     pub fn theme(&self) -> Theme {
-        self.custom_theme
-            .clone()
-            .unwrap_or_else(|| theme::by_name(&self.theme_name))
+        self.custom_theme.clone().unwrap_or_else(|| self.theme_named(&self.theme_name))
+    }
+
+    pub fn theme_named(&self, name: &str) -> Theme {
+        self.user_themes.iter().find(|t| t.name == name).cloned().unwrap_or_else(|| theme::by_name(name))
+    }
+
+    /// Noms de tous les thèmes disponibles (prédéfinis puis importés).
+    pub fn theme_names(&self) -> Vec<String> {
+        theme::presets().into_iter().map(|t| t.name).chain(self.user_themes.iter().map(|t| t.name.clone())).collect()
     }
 }

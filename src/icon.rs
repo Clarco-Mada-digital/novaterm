@@ -134,6 +134,18 @@ pub fn export(dir: &std::path::Path) -> std::io::Result<()> {
         render(size).save(&path).map_err(std::io::Error::other)?;
         println!("{}", path.display());
     }
+    // Icône Windows multi-tailles.
+    let frames: Vec<image::codecs::ico::IcoFrame> = [16u32, 24, 32, 48, 64, 128, 256]
+        .iter()
+        .filter_map(|&s| {
+            let img = render(s);
+            image::codecs::ico::IcoFrame::as_png(img.as_raw(), s, s, image::ExtendedColorType::Rgba8).ok()
+        })
+        .collect();
+    let ico = dir.join("novaterm.ico");
+    let file = std::fs::File::create(&ico)?;
+    image::codecs::ico::IcoEncoder::new(file).encode_images(&frames).map_err(std::io::Error::other)?;
+    println!("{}", ico.display());
     let svg = dir.join("novaterm.svg");
     std::fs::write(&svg, SVG)?;
     println!("{}", svg.display());

@@ -1,0 +1,48 @@
+# Script des captures du README (voir packaging/screenshots.sh).
+# Commandes : wait S · type TEXTE · enter · key COMBO · shot FICHIER · quit
+wait 2
+type ls
+enter
+wait 0.5
+type cat src/main.rs
+enter
+wait 0.5
+type grep -rq TODO src
+enter
+wait 0.5
+type sleep 2.4 && echo Compilation OK
+enter
+wait 3.2
+key Ctrl+Shift+E
+wait 1.8
+type imgcat --width 44 logo.svg
+enter
+wait 2.5
+key Alt+Left
+wait 0.5
+type git st
+wait 1.2
+shot docs/images/hero.png
+key Backspace
+key Backspace
+key Backspace
+key Backspace
+key Backspace
+key Backspace
+type docker compose 
+wait 1.2
+shot docs/images/completions.png
+key Ctrl+U
+wait 0.4
+key Ctrl+Shift+P
+wait 0.6
+type div
+wait 0.8
+shot docs/images/palette.png
+key Escape
+wait 0.5
+key Ctrl+Comma
+wait 1.5
+shot docs/images/settings.png
+wait 0.5
+quit

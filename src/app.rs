@@ -19,11 +19,18 @@ use egui::{
     Color32, CornerRadius, Id, Key, Modifiers, Pos2, Rect, Sense, Stroke, TextureHandle, TextureOptions, Vec2,
 };
 
-use crate::config::{AcceptKey, BellMode, BlinkStyle, Config, RightClick, StartDir};
+use crate::blocks::{self, fmt_duration};
+use crate::completions::Completer;
+use crate::config::{AcceptKey, AutoTheme, BadgeMode, BellMode, BlinkStyle, BroadcastScope, Config, RestoreMode, RightClick, StartDir};
+use crate::guard;
+use crate::links::{self, Target};
+use crate::platform;
+use crate::quake;
+use crate::session::{self, Node, Profile, Session, TabState};
 use crate::history::{self, History};
 use crate::fonts::{self, FontEntry};
 use crate::input::{self, MouseButton};
-use crate::keys::{Action, Bindings, KeyCombo, ALL_ACTIONS};
+use crate::keys::{Action, Bindings, KeyCombo, KeyContext, ALL_ACTIONS};
 use crate::layout::{Dir, SplitTree};
 use crate::render::{self, FontCache, FontMetrics};
 use crate::settings::{self, SettingsUi};
@@ -36,6 +43,45 @@ struct Tab {
     zoomed: Option<u64>,
     /// Titre choisi par l'utilisateur (sinon titre du panneau).
     title: Option<String>,
+    /// Le clavier est diffusé à tous les panneaux de l'onglet.
+    broadcast: bool,
+    /// Activité en arrière-plan : None = rien, Some(None) = nouvelle sortie,
+    /// Some(Some(ok)) = commande terminée (succès / échec).
+    activity: Option<Option<bool>>,
+}
+
+impl Tab {
+    fn new(id: u64) -> Self {
+        Tab { tree: SplitTree::Leaf(id), focused: id, zoomed: None, title: None, broadcast: false, activity: None }
+    }
+}
+
+/// Options de démarrage (ligne de commande, garde-fou).
+pub struct StartOptions {
+    pub config: Config,
+    pub quake: bool,
+    /// Raison du mode sans échec (lancement précédent planté, --safe-mode).
+    pub safe_reason: Option<String>,
+    pub config_warning: Option<String>,
+    pub profile: Option<String>,
+    /// Dossier demandé (« Ouvrir NovaTerm ici »).
+    pub cwd: Option<PathBuf>,
+}
+
+/// Contenu de la palette.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum PaletteMode {
+    All,
+    Snippets,
+    Profiles,
+}
+
+#[derive(Clone)]
+enum PaletteItem {
+    Action(Action),
+    Snippet(usize),
+    Profile(usize),
+    Theme(String),
 }
 
 struct Toast {
@@ -56,6 +102,7 @@ struct Palette {
     query: String,
     selected: usize,
     focus: bool,
+    mode: PaletteMode,
 }
 
 /// Suggestions courantes pour la ligne du panneau actif.
@@ -64,7 +111,18 @@ struct Suggest {
     pane: u64,
     buffer: String,
     items: Vec<String>,
+    /// Description (complétion intelligente) ; None = vient de l'historique.
+    descs: Vec<Option<String>>,
     selected: usize,
+}
+
+/// Action déclenchée depuis la barre d'un bloc de commande.
+#[derive(Clone, Copy)]
+enum BlockAct {
+    CopyCommand,
+    CopyOutput,
+    Rerun,
+    ScrollTop,
 }
 
 /// Fenêtre « Rechercher dans l'historique ».
@@ -186,6 +244,79 @@ pub struct NovaApp {
     session_cmds: Vec<String>,
     suggest: Suggest,
     history_popup: Option<HistoryPopup>,
+    completer: Completer,
+    /// Instance « terminal rapide ».
+    quake: bool,
+    quake_rx: Option<Receiver<()>>,
+    quake_visible: bool,
+    quake_placed: bool,
+    /// Message important affiché en bandeau (mode sans échec, config invalide).
+    banner: Option<String>,
+    frames: u64,
+    /// Désarmer le garde-fou après N frames réussies.
+    guard_frames: Option<u64>,
+    last_autosave: f64,
+    last_input_time: f64,
+    /// Bloc mis en évidence après une navigation : (panneau, id, jusqu'à).
+    highlight: Option<(u64, u32, f64)>,
+    /// Dialogue « enregistrer comme profil » : nom en cours de saisie.
+    save_profile: Option<(String, bool)>,
+    theme_import: Option<settings::FileBrowser>,
+    dark_rx: Option<Receiver<Option<bool>>>,
+    last_dark_poll: f64,
+    system_dark: Option<bool>,
+    /// Mode démo (captures d'écran du README) : script injecté dans l'application.
+    demo: Option<Demo>,
+    /// AppImage en cours d'exécution, pas encore dans le menu (proposition affichée).
+    appimage_offer: Option<PathBuf>,
+}
+
+/// Étape du mode démo (`NOVATERM_DEMO=fichier`). Les entrées sont injectées dans
+/// NovaTerm lui-même : aucune touche n'est envoyée au système.
+enum DemoStep {
+    Wait(f64),
+    Type(String),
+    Key(KeyCombo),
+    Shot(PathBuf),
+    Quit,
+}
+
+struct Demo {
+    steps: std::collections::VecDeque<DemoStep>,
+    resume_at: f64,
+    pending_shot: Option<PathBuf>,
+}
+
+impl Demo {
+    /// Format : une commande par ligne — `wait 1.5`, `type texte`, `enter`,
+    /// `key Ctrl+Shift+E`, `shot chemin.png`, `quit` (# = commentaire).
+    fn load(path: &str) -> Option<Self> {
+        let text = std::fs::read_to_string(path).map_err(|e| eprintln!("NovaTerm: démo illisible: {e}")).ok()?;
+        let mut steps = std::collections::VecDeque::new();
+        for line in text.lines().map(str::trim).filter(|l| !l.is_empty() && !l.starts_with('#')) {
+            let (cmd, arg) = line.split_once(' ').unwrap_or((line, ""));
+            let step = match cmd {
+                "wait" => DemoStep::Wait(arg.trim().parse().unwrap_or(0.5)),
+                "type" => DemoStep::Type(arg.to_string()),
+                "enter" => DemoStep::Key(KeyCombo::new(false, false, false, Key::Enter)),
+                "key" => match KeyCombo::parse(arg) {
+                    Some(c) => DemoStep::Key(c),
+                    None => {
+                        eprintln!("NovaTerm: démo : touche inconnue {arg}");
+                        continue;
+                    }
+                },
+                "shot" => DemoStep::Shot(PathBuf::from(arg.trim())),
+                "quit" => DemoStep::Quit,
+                other => {
+                    eprintln!("NovaTerm: démo : commande inconnue {other}");
+                    continue;
+                }
+            };
+            steps.push_back(step);
+        }
+        Some(Demo { steps, resume_at: 1.5, pending_shot: None })
+    }
 }
 
 fn theme_sig(config: &Config) -> String {
@@ -297,56 +428,46 @@ fn get_clipboard() -> Option<String> {
     arboard::Clipboard::new().ok()?.get_text().ok()
 }
 
-/// Cherche un lien (http, https, file, ftp, mailto) qui couvre la colonne `col`.
-fn find_link(chars: &[char], col: usize) -> Option<(String, usize, usize)> {
-    const SCHEMES: [&str; 6] = ["https://", "http://", "file://", "ftp://", "mailto:", "ssh://"];
-    let line: String = chars.iter().collect();
-    let mut start_byte = 0;
-    while start_byte < line.len() {
-        let rest = &line[start_byte..];
-        let found = SCHEMES.iter().filter_map(|s| rest.find(s)).min()?;
-        let abs = start_byte + found;
-        let start_col = line[..abs].chars().count();
-        let mut end_col = start_col;
-        for (i, ch) in chars.iter().enumerate().skip(start_col) {
-            if ch.is_whitespace() || matches!(ch, '<' | '>' | '"' | '`' | '\'' | '│' | '\0') {
-                break;
-            }
-            end_col = i + 1;
-        }
-        // Retirer la ponctuation finale.
-        while end_col > start_col && matches!(chars[end_col - 1], '.' | ',' | ';' | ':' | '!' | '?' | ')' | ']' | '}') {
-            let candidate: String = chars[start_col..end_col].iter().collect();
-            if chars[end_col - 1] == ')' && candidate.matches('(').count() >= candidate.matches(')').count() {
-                break;
-            }
-            end_col -= 1;
-        }
-        let url: String = chars[start_col..end_col].iter().collect();
-        if col >= start_col && col < end_col && SCHEMES.iter().all(|s| url.len() > s.len()) {
-            return Some((url, start_col, end_col));
-        }
-        start_byte = abs + 1;
-        while !line.is_char_boundary(start_byte) {
-            start_byte += 1;
+/// Fichier qui pourrait s'exécuter si on l'« ouvre » avec l'application par défaut.
+fn is_executable_file(path: &std::path::Path) -> bool {
+    let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("").to_ascii_lowercase();
+    if matches!(ext.as_str(), "desktop" | "appimage" | "exe" | "msi" | "bat" | "cmd" | "ps1" | "vbs" | "jar" | "app" | "command" | "sh" | "run" | "bin") {
+        return true;
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        if let Ok(m) = std::fs::metadata(path) {
+            return m.is_file() && m.permissions().mode() & 0o111 != 0;
         }
     }
-    None
+    false
 }
 
 fn open_external(target: &str) {
-    if let Err(e) = std::process::Command::new("xdg-open").arg(target).spawn() {
-        eprintln!("NovaTerm: impossible d'ouvrir {target}: {e}");
-    }
+    crate::platform::open(target);
 }
 
 impl NovaApp {
-    pub fn new(cc: &eframe::CreationContext<'_>) -> Self {
+    pub fn new(cc: &eframe::CreationContext<'_>, start: StartOptions) -> Self {
         let ctx = cc.egui_ctx.clone();
-        let config = Config::load();
+        let mut config = start.config;
         let font_catalog = (!config.font_family.is_empty()).then(fonts::discover);
-        fonts::install(&ctx, &config.font_family, font_catalog.as_ref());
+        let mut font_error = None;
+        if let Err(e) = fonts::install(&ctx, &config.font_family, font_catalog.as_ref()) {
+            // Police introuvable ou invalide : on revient à la police intégrée.
+            font_error = Some(format!("{e} : police intégrée utilisée."));
+            config.font_family.clear();
+            config.save();
+        }
         ctx.options_mut(|o| o.zoom_with_keyboard = false);
+        let banner = match (&start.safe_reason, &start.config_warning, &font_error) {
+            (Some(r), _, _) if r == "manual" => Some("Mode sans échec : police intégrée.".to_string()),
+            (Some(r), _, _) => Some(guard::explain(r)),
+            (None, Some(w), _) => Some(w.clone()),
+            (None, None, Some(f)) => Some(f.clone()),
+            _ => None,
+        };
 
         let theme = config.theme();
         apply_visuals(&ctx, &theme);
@@ -401,10 +522,398 @@ impl NovaApp {
             session_cmds: Vec::new(),
             suggest: Suggest::default(),
             history_popup: None,
+            completer: Completer::default(),
+            quake: start.quake,
+            quake_rx: if start.quake { quake::listen(ctx.clone()) } else { None },
+            quake_visible: true,
+            quake_placed: false,
+            banner,
+            frames: 0,
+            guard_frames: Some(20),
+            last_autosave: 0.0,
+            last_input_time: 0.0,
+            highlight: None,
+            save_profile: None,
+            theme_import: None,
+            dark_rx: None,
+            last_dark_poll: -100.0,
+            system_dark: None,
+            demo: std::env::var("NOVATERM_DEMO").ok().and_then(|p| Demo::load(&p)),
+            appimage_offer: crate::appimage::current().filter(|p| !crate::appimage::is_integrated(p)),
             config,
         };
-        app.new_tab();
+        // Démarrage : profil demandé, sinon session précédente, sinon un onglet vide.
+        let profile = start.profile.clone().or_else(|| (!app.config.startup_profile.is_empty()).then(|| app.config.startup_profile.clone()));
+        let mut opened = false;
+        if let Some(dir) = start.cwd.clone() {
+            if let Some(id) = app.spawn_pane(Some(dir)) {
+                app.tabs.push(Tab::new(id));
+                opened = true;
+            }
+        }
+        if !app.quake && !opened {
+            if let Some(name) = profile {
+                opened = app.open_profile_by_name(&name);
+            }
+            if !opened && app.config.restore_session != RestoreMode::Off {
+                if let Some(sess) = session::load() {
+                    let content = app.config.restore_session == RestoreMode::LayoutAndContent;
+                    app.restore_session(&sess, content);
+                }
+            }
+        }
+        if app.tabs.is_empty() {
+            app.new_tab();
+        }
         app
+    }
+
+    // ------------------------------------------------------------------
+    // Session & profils
+    // ------------------------------------------------------------------
+
+    fn tree_to_node(&self, tree: &SplitTree, content: bool) -> Node {
+        match tree {
+            SplitTree::Leaf(id) => {
+                let pane = self.panes.get(id);
+                Node::Leaf {
+                    cwd: pane.and_then(|p| p.cwd()).map(|p| p.display().to_string()),
+                    command: None,
+                    content: if content {
+                        pane.map(|p| p.tail_text(self.config.restore_lines.clamp(10, 5000))).filter(|t| !t.trim().is_empty())
+                    } else {
+                        None
+                    },
+                }
+            }
+            SplitTree::Split { dir, ratio, left, right } => Node::Split {
+                horizontal: *dir == Dir::Horizontal,
+                ratio: *ratio,
+                a: Box::new(self.tree_to_node(left, content)),
+                b: Box::new(self.tree_to_node(right, content)),
+            },
+        }
+    }
+
+    /// Crée les panneaux d'un nœud de disposition.
+    fn node_to_tree(&mut self, node: &Node) -> Option<SplitTree> {
+        match node {
+            Node::Leaf { cwd, command, content } => {
+                let dir = cwd.as_ref().map(PathBuf::from).filter(|p| p.is_dir()).or_else(|| self.start_cwd());
+                let id = self.spawn_pane(dir)?;
+                if let Some(pane) = self.panes.get_mut(&id) {
+                    if let Some(text) = content {
+                        pane.inject_restored(text);
+                    }
+                    if let Some(cmd) = command.as_ref().filter(|c| !c.trim().is_empty()) {
+                        pane.write_input(format!("{cmd}\r").as_bytes());
+                    }
+                }
+                Some(SplitTree::Leaf(id))
+            }
+            Node::Split { horizontal, ratio, a, b } => {
+                let l = self.node_to_tree(a);
+                let r = self.node_to_tree(b);
+                match (l, r) {
+                    (Some(l), Some(r)) => Some(SplitTree::Split {
+                        dir: if *horizontal { Dir::Horizontal } else { Dir::Vertical },
+                        ratio: *ratio,
+                        left: Box::new(l),
+                        right: Box::new(r),
+                    }),
+                    (l, r) => l.or(r),
+                }
+            }
+        }
+    }
+
+    fn capture_tabs(&self, content: bool) -> Vec<TabState> {
+        self.tabs
+            .iter()
+            .map(|t| TabState {
+                title: t.title.clone(),
+                focused: t.tree.leaves().iter().position(|l| *l == t.focused).unwrap_or(0),
+                root: self.tree_to_node(&t.tree, content),
+            })
+            .collect()
+    }
+
+    fn open_tabs(&mut self, tabs: &[TabState]) -> usize {
+        let mut n = 0;
+        for ts in tabs {
+            if let Some(tree) = self.node_to_tree(&ts.root) {
+                let leaves = tree.leaves();
+                let focused = leaves.get(ts.focused).copied().unwrap_or(leaves[0]);
+                self.tabs.push(Tab { tree, focused, zoomed: None, title: ts.title.clone(), broadcast: false, activity: None });
+                n += 1;
+            }
+        }
+        n
+    }
+
+    fn restore_session(&mut self, sess: &Session, content: bool) {
+        let mut tabs = sess.tabs.clone();
+        if !content {
+            for t in &mut tabs {
+                for leaf in t.root.leaves_mut() {
+                    if let Node::Leaf { content, .. } = leaf {
+                        *content = None;
+                    }
+                }
+            }
+        }
+        if self.open_tabs(&tabs) > 0 {
+            self.active = sess.active.min(self.tabs.len() - 1);
+        }
+    }
+
+    fn save_session(&self) {
+        if self.quake || self.config.restore_session == RestoreMode::Off {
+            return;
+        }
+        let content = self.config.restore_session == RestoreMode::LayoutAndContent;
+        session::save(&Session { active: self.active, tabs: self.capture_tabs(content) });
+    }
+
+    fn open_profile(&mut self, index: usize) {
+        let Some(p) = self.config.profiles.get(index).cloned() else { return };
+        let first = self.tabs.len();
+        if self.open_tabs(&p.tabs) > 0 {
+            self.active = first;
+            self.toast(format!("Profil « {} » ouvert", p.name));
+        }
+    }
+
+    fn open_profile_by_name(&mut self, name: &str) -> bool {
+        match self.config.profiles.iter().position(|p| p.name.eq_ignore_ascii_case(name)) {
+            Some(i) => {
+                self.open_profile(i);
+                true
+            }
+            None => {
+                self.toast(format!("Profil « {name} » introuvable"));
+                false
+            }
+        }
+    }
+
+    fn save_profile_named(&mut self, name: &str) {
+        let name = name.trim();
+        if name.is_empty() {
+            return;
+        }
+        let tabs = self.capture_tabs(false);
+        let profile = Profile { name: name.to_string(), tabs };
+        match self.config.profiles.iter_mut().find(|p| p.name == name) {
+            Some(p) => *p = profile,
+            None => self.config.profiles.push(profile),
+        }
+        self.config_dirty = true;
+        self.toast(format!("Profil « {name} » enregistré (Paramètres → Session pour les commandes)"));
+    }
+
+    // ------------------------------------------------------------------
+    // Blocs de commandes
+    // ------------------------------------------------------------------
+
+    /// Navigue vers la commande précédente / suivante du panneau actif.
+    fn jump_command(&mut self, up: bool) {
+        let Some(id) = self.focused_id() else { return };
+        let time = self.ctx.input(|i| i.time);
+        let Some(pane) = self.panes.get_mut(&id) else { return };
+        let tops = pane.block_tops();
+        let offset = pane.term.grid().display_offset() as i32;
+        let view_top = alacritty_terminal::index::Line(-offset);
+        let target = if up {
+            tops.iter().rev().find(|t| **t < view_top).copied()
+        } else {
+            tops.iter().find(|t| **t > view_top).copied()
+        };
+        match target {
+            Some(t) => {
+                pane.scroll_to_line(t);
+                pane.refresh_marks();
+                let bid = pane.vis_blocks.iter().find(|b| b.top_row == 0).map(|b| b.id);
+                if let Some(bid) = bid {
+                    self.highlight = Some((id, bid, time + 0.8));
+                }
+            }
+            None if !up => {
+                pane.term.scroll_display(Scroll::Bottom);
+                pane.dirty = true;
+            }
+            None => {}
+        }
+    }
+
+    fn last_block(&self) -> Option<(u64, u32)> {
+        let id = self.focused_id()?;
+        let pane = self.panes.get(&id)?;
+        pane.blocks.iter().rev().find(|b| b.finished.is_some() || pane.running != Some(b.id)).map(|b| (id, b.id))
+    }
+
+    fn copy_block_output(&mut self, pane_id: u64, block: u32) {
+        let Some(text) = self.panes.get(&pane_id).and_then(|p| p.block_output(block)) else {
+            self.toast("Sortie introuvable (effacée de l'historique)");
+            return;
+        };
+        let lines = text.lines().count();
+        self.ctx.copy_text(text);
+        self.toast(format!("Sortie copiée ({lines} lignes)"));
+    }
+
+    fn block_command(&self, pane_id: u64, block: u32) -> Option<String> {
+        self.panes.get(&pane_id)?.block(block).map(|b| b.command.clone())
+    }
+
+    /// Notifications de fin de commande et des programmes.
+    fn process_finished(&mut self, ctx: &egui::Context) {
+        let window_focused = ctx.input(|i| i.focused);
+        let startup_done = ctx.input(|i| i.time) > 3.0;
+        let active_ids: Vec<u64> = self.tabs.get(self.active).map(|t| t.tree.leaves()).unwrap_or_default();
+        let mut notes: Vec<(String, String, bool)> = Vec::new();
+        let mut activity: Vec<(u64, Option<bool>)> = Vec::new();
+        for (id, pane) in self.panes.iter_mut() {
+            let visible = active_ids.contains(id);
+            for f in pane.finished.drain(..) {
+                let ok = f.exit == 0;
+                if !visible {
+                    activity.push((*id, Some(ok)));
+                }
+                let long = f.duration.as_secs() >= self.config.notify_threshold_secs as u64;
+                let away = !window_focused || !visible;
+                if self.config.notify_long_commands && long && (away || !self.config.notify_only_unfocused) {
+                    let title = if ok { "✔ Commande terminée".to_string() } else { format!("✖ Échec (code {})", f.exit) };
+                    let cmd: String = f.command.chars().take(80).collect();
+                    notes.push((title, format!("{cmd} — {}", fmt_duration(f.duration)), true));
+                }
+            }
+            for (title, body) in pane.notifications.drain(..) {
+                notes.push((title, body, false));
+            }
+            if !visible && startup_done && pane.last_output.elapsed().as_millis() < 200 {
+                activity.push((*id, None));
+            }
+        }
+        if self.config.tab_activity {
+            for (id, a) in activity {
+                if let Some(tab) = self.tabs.iter_mut().find(|t| t.tree.contains(id)) {
+                    // Un résultat (succès / échec) prime sur une simple activité.
+                    if a.is_some() || tab.activity.is_none() {
+                        tab.activity = Some(a);
+                    }
+                }
+            }
+        }
+        for (title, body, from_cmd) in notes {
+            if !window_focused || !from_cmd {
+                platform::notify(&title, &body);
+            }
+            if from_cmd && self.config.notify_sound {
+                platform::play_sound();
+            }
+            self.toast(format!("{title} : {body}"));
+        }
+    }
+
+    /// Thème automatique clair / sombre.
+    fn update_auto_theme(&mut self, time: f64) {
+        let want_dark = match self.config.auto_theme {
+            AutoTheme::Off => return,
+            AutoTheme::System => {
+                if let Some(rx) = &self.dark_rx {
+                    if let Ok(v) = rx.try_recv() {
+                        self.system_dark = v;
+                        self.dark_rx = None;
+                    }
+                }
+                if time - self.last_dark_poll > 5.0 && self.dark_rx.is_none() {
+                    self.last_dark_poll = time;
+                    let (tx, rx) = std::sync::mpsc::channel();
+                    let winit_theme = self.ctx.input(|i| i.raw.system_theme);
+                    std::thread::spawn(move || {
+                        let v = match winit_theme {
+                            Some(egui::Theme::Dark) => Some(true),
+                            Some(egui::Theme::Light) => Some(false),
+                            None => platform::desktop_prefers_dark(),
+                        };
+                        let _ = tx.send(v);
+                    });
+                    self.dark_rx = Some(rx);
+                }
+                match self.system_dark {
+                    Some(d) => d,
+                    None => return,
+                }
+            }
+            AutoTheme::Schedule => {
+                if time - self.last_dark_poll < 30.0 {
+                    return;
+                }
+                self.last_dark_poll = time;
+                let hour = local_hour();
+                let (day, night) = (self.config.day_hour.min(23), self.config.night_hour.min(23));
+                if day <= night {
+                    !(hour >= day && hour < night)
+                } else {
+                    hour >= night && hour < day
+                }
+            }
+        };
+        let name = if want_dark { self.config.dark_theme.clone() } else { self.config.light_theme.clone() };
+        if self.config.custom_theme.is_none() && self.config.theme_name != name && !name.is_empty() {
+            self.config.theme_name = name;
+            self.config_dirty = true;
+        }
+    }
+
+    /// Terminal rapide : placement, affichage / masquage.
+    fn update_quake(&mut self, ctx: &egui::Context) {
+        if !self.quake {
+            return;
+        }
+        let monitor = ctx.input(|i| i.viewport().monitor_size);
+        if !self.quake_placed {
+            if let Some(m) = monitor {
+                let w = (m.x * self.config.quake_width.clamp(0.3, 1.0)).round();
+                let h = (m.y * self.config.quake_height.clamp(0.15, 1.0)).round();
+                ctx.send_viewport_cmd(egui::ViewportCommand::InnerSize(Vec2::new(w, h)));
+                ctx.send_viewport_cmd(egui::ViewportCommand::OuterPosition(Pos2::new(((m.x - w) / 2.0).max(0.0), 0.0)));
+                ctx.send_viewport_cmd(egui::ViewportCommand::Focus);
+                self.quake_placed = true;
+            }
+        }
+        let mut toggle = false;
+        if let Some(rx) = &self.quake_rx {
+            while rx.try_recv().is_ok() {
+                toggle = true;
+            }
+        }
+        if toggle {
+            let focused = ctx.input(|i| i.focused);
+            if self.quake_visible && focused {
+                self.quake_hide(ctx);
+            } else {
+                self.quake_visible = true;
+                ctx.send_viewport_cmd(egui::ViewportCommand::Visible(true));
+                ctx.send_viewport_cmd(egui::ViewportCommand::Minimized(false));
+                ctx.send_viewport_cmd(egui::ViewportCommand::Focus);
+                self.quake_placed = false;
+            }
+        }
+        if self.config.quake_hide_on_unfocus && self.quake_visible && self.frames > 30 {
+            let lost = ctx.input(|i| i.events.iter().any(|e| matches!(e, egui::Event::WindowFocused(false))));
+            if lost && !self.settings_open && self.confirm.is_none() {
+                self.quake_hide(ctx);
+            }
+        }
+        // Réveil régulier pour recevoir « toggle » même fenêtre masquée.
+        ctx.request_repaint_after(Duration::from_millis(150));
+    }
+
+    fn quake_hide(&mut self, ctx: &egui::Context) {
+        self.quake_visible = false;
+        ctx.send_viewport_cmd(egui::ViewportCommand::Minimized(true));
     }
 
     // ------------------------------------------------------------------
@@ -433,10 +942,40 @@ impl NovaApp {
         }
     }
 
+    /// Taille (colonnes, lignes) estimée d'un nouveau panneau : le shell démarre
+    /// directement à la bonne taille (évite le « % » de zsh et les reflows).
+    fn spawn_size(&self, split: Option<Dir>) -> (usize, usize) {
+        let area = self.pane_rects.iter().map(|(_, r)| *r).reduce(|a, b| a.union(b));
+        let rect = match (split, self.focused_id()) {
+            (Some(dir), Some(f)) => self.pane_rects.iter().find(|(id, _)| *id == f).map(|(_, r)| {
+                let mut r = *r;
+                match dir {
+                    Dir::Horizontal => r.set_width(r.width() / 2.0 - 3.0),
+                    Dir::Vertical => r.set_height(r.height() / 2.0 - 3.0),
+                }
+                r
+            }),
+            _ => area,
+        };
+        match rect {
+            // Une colonne de marge : trop petit est sans conséquence, trop grand fait déborder.
+            Some(r) => {
+                let (c, l) = render::grid_size(r, &self.config, self.metrics);
+                (c.saturating_sub(1).max(2), l.max(1))
+            }
+            None => (80, 24),
+        }
+    }
+
     fn spawn_pane(&mut self, cwd: Option<PathBuf>) -> Option<u64> {
+        let size = self.spawn_size(None);
+        self.spawn_pane_sized(cwd, size)
+    }
+
+    fn spawn_pane_sized(&mut self, cwd: Option<PathBuf>, (cols, rows): (usize, usize)) -> Option<u64> {
         let id = self.next_id;
         self.next_id += 1;
-        match Pane::spawn(80, 24, &self.config, cwd, self.ctx.clone()) {
+        match Pane::spawn(cols, rows, &self.config, cwd, self.ctx.clone()) {
             Ok(pane) => {
                 self.panes.insert(id, pane);
                 Some(id)
@@ -452,7 +991,8 @@ impl NovaApp {
     /// Relance un shell dans un panneau dont le processus est terminé.
     fn respawn(&mut self, id: u64) {
         let cwd = self.start_cwd().or_else(dirs::home_dir);
-        match Pane::spawn(80, 24, &self.config, cwd, self.ctx.clone()) {
+        let (cols, rows) = self.panes.get(&id).map(|p| (p.cols, p.rows)).unwrap_or((80, 24));
+        match Pane::spawn(cols, rows, &self.config, cwd, self.ctx.clone()) {
             Ok(pane) => {
                 self.panes.insert(id, pane);
                 self.toast("Shell relancé");
@@ -464,7 +1004,7 @@ impl NovaApp {
     fn new_tab(&mut self) {
         let cwd = self.start_cwd();
         if let Some(id) = self.spawn_pane(cwd) {
-            self.tabs.push(Tab { tree: SplitTree::Leaf(id), focused: id, zoomed: None, title: None });
+            self.tabs.push(Tab::new(id));
             self.active = self.tabs.len() - 1;
             if self.tabs.len() > 1 {
                 self.toast("Nouvel onglet");
@@ -475,7 +1015,8 @@ impl NovaApp {
     fn split_focused(&mut self, dir: Dir) {
         let Some(focused) = self.focused_id() else { return };
         let cwd = self.start_cwd();
-        if let Some(new_id) = self.spawn_pane(cwd) {
+        let size = self.spawn_size(Some(dir));
+        if let Some(new_id) = self.spawn_pane_sized(cwd, size) {
             let tab = &mut self.tabs[self.active];
             tab.tree.split(focused, dir, new_id);
             tab.focused = new_id;
@@ -715,7 +1256,7 @@ impl NovaApp {
             tab.zoomed = None;
             tab.tree = tree;
         }
-        self.tabs.insert(self.active + 1, Tab { tree: SplitTree::Leaf(id), focused: id, zoomed: None, title: None });
+        self.tabs.insert(self.active + 1, Tab::new(id));
         self.active += 1;
         self.toast("Panneau déplacé dans un nouvel onglet");
     }
@@ -726,7 +1267,7 @@ impl NovaApp {
 
     fn selection_text(&self) -> Option<String> {
         let id = self.focused_id()?;
-        self.panes.get(&id)?.term.selection_to_string().filter(|t| !t.is_empty())
+        self.panes.get(&id)?.term.selection_to_string().map(|t| blocks::strip_tags(&t)).filter(|t| !t.is_empty())
     }
 
     fn copy(&mut self) -> bool {
@@ -770,16 +1311,17 @@ impl NovaApp {
     }
 
     fn paste_text(&mut self, text: &str) {
-        let Some(id) = self.focused_id() else { return };
-        let Some(pane) = self.panes.get_mut(&id) else { return };
         let text = text.replace("\r\n", "\r").replace('\n', "\r");
-        let payload = if pane.term.mode().contains(TermMode::BRACKETED_PASTE) {
-            // Empêche un texte collé de terminer lui-même le mode « bracketed paste ».
-            format!("\x1b[200~{}\x1b[201~", text.replace('\x1b', ""))
-        } else {
-            text
-        };
-        pane.write_input(payload.as_bytes());
+        for id in self.input_targets() {
+            let Some(pane) = self.panes.get_mut(&id) else { continue };
+            let payload = if pane.term.mode().contains(TermMode::BRACKETED_PASTE) {
+                // Empêche un texte collé de terminer lui-même le mode « bracketed paste ».
+                format!("\x1b[200~{}\x1b[201~", text.replace('\x1b', ""))
+            } else {
+                text.clone()
+            };
+            pane.write_input(payload.as_bytes());
+        }
     }
 
     fn select_all(&mut self) {
@@ -792,7 +1334,7 @@ impl NovaApp {
         sel.update(Point::new(bottom, last_col), Side::Right);
         pane.term.selection = Some(sel);
         pane.dirty = true;
-        if let Some(text) = pane.term.selection_to_string() {
+        if let Some(text) = pane.term.selection_to_string().map(|t| blocks::strip_tags(&t)) {
             set_primary_selection(&text);
         }
     }
@@ -884,7 +1426,7 @@ impl NovaApp {
     }
 
     fn window_radius(&self) -> u8 {
-        if !self.config.custom_decorations || self.is_maximized() {
+        if !self.config.custom_decorations || self.is_maximized() || self.quake {
             0
         } else {
             self.config.corner_radius.clamp(0.0, 24.0) as u8
@@ -1030,7 +1572,7 @@ impl NovaApp {
             }
             CommandPalette => {
                 if self.palette.take().is_none() {
-                    self.palette = Some(Palette { query: String::new(), selected: 0, focus: true });
+                    self.open_palette(PaletteMode::All);
                 } else {
                     self.clear_egui_focus();
                 }
@@ -1055,6 +1597,44 @@ impl NovaApp {
                     let query = self.panes.get(&pane).and_then(|p| p.cmdline.as_ref()).map(|(_, b)| b.clone()).unwrap_or_default();
                     self.palette = None;
                     self.history_popup = Some(HistoryPopup { pane, query, selected: 0, focus: true });
+                }
+            }
+            PrevCommand => self.jump_command(true),
+            NextCommand => self.jump_command(false),
+            CopyLastOutput => match self.last_block() {
+                Some((p, b)) => self.copy_block_output(p, b),
+                None => self.toast("Aucune commande (intégration shell inactive ?)"),
+            },
+            CopyLastCommand => {
+                if let Some(cmd) = self.last_block().and_then(|(p, b)| self.block_command(p, b)) {
+                    self.ctx.copy_text(cmd);
+                    self.toast("Commande copiée");
+                }
+            }
+            RerunLast => {
+                if let Some((p, b)) = self.last_block() {
+                    if let Some(cmd) = self.block_command(p, b) {
+                        self.insert_command(p, &cmd, true);
+                    }
+                }
+            }
+            ToggleBroadcast => {
+                if let Some(tab) = self.tabs.get_mut(self.active) {
+                    tab.broadcast = !tab.broadcast;
+                    let on = tab.broadcast;
+                    self.toast(if on { "📡 Diffusion activée : le clavier va à tous les panneaux" } else { "Diffusion désactivée" });
+                }
+            }
+            Snippets => self.open_palette(PaletteMode::Snippets),
+            Profiles => self.open_palette(PaletteMode::Profiles),
+            SaveProfile => self.save_profile = Some((String::new(), true)),
+            ImportTheme => self.theme_import = Some(settings::FileBrowser::new_any()),
+            QuickTerminal => {
+                if self.quake {
+                    let ctx = self.ctx.clone();
+                    self.quake_hide(&ctx);
+                } else {
+                    quake::toggle_or_launch();
                 }
             }
             ToggleSuggestions => {
@@ -1162,6 +1742,27 @@ impl NovaApp {
             }
             pane.write_input(&bytes);
         }
+        // Diffusion : même touche vers les autres panneaux (encodée selon leur mode).
+        for other in self.input_targets().into_iter().filter(|o| *o != id) {
+            if let Some(p) = self.panes.get_mut(&other) {
+                let app_cursor = p.term.mode().contains(TermMode::APP_CURSOR);
+                if let Some(bytes) = input::encode_key(key, &mods, app_cursor) {
+                    p.write_input(&bytes);
+                }
+            }
+        }
+    }
+
+    /// Panneaux qui reçoivent le clavier (le panneau actif, ou tous si diffusion).
+    fn input_targets(&self) -> Vec<u64> {
+        let Some(tab) = self.tabs.get(self.active) else { return Vec::new() };
+        if !tab.broadcast {
+            return vec![tab.focused];
+        }
+        match self.config.broadcast_scope {
+            BroadcastScope::Tab => tab.tree.leaves(),
+            BroadcastScope::All => self.tabs.iter().flat_map(|t| t.tree.leaves()).collect(),
+        }
     }
 
     fn process_pending(&mut self) {
@@ -1171,7 +1772,7 @@ impl NovaApp {
                 Pending::Action(a) => self.run_action(a),
                 Pending::Key { key, mods } => self.handle_terminal_key(key, mods),
                 Pending::Text(text) => {
-                    if let Some(id) = self.focused_id() {
+                    for id in self.input_targets() {
                         if let Some(pane) = self.panes.get_mut(&id) {
                             if !pane.exited {
                                 pane.term.selection = None;
@@ -1191,10 +1792,11 @@ impl NovaApp {
                     }
                     UiCmd::PaletteRun => {
                         if let Some(pal) = self.palette.take() {
-                            let items = self.palette_items(&pal.query);
+                            let items = self.palette_items(&pal.query, pal.mode);
                             self.clear_egui_focus();
-                            if let Some(a) = items.get(pal.selected.min(items.len().saturating_sub(1))) {
-                                self.run_action(*a);
+                            let n = items.len();
+                            if let Some((item, ..)) = items.into_iter().nth(pal.selected.min(n.saturating_sub(1))) {
+                                self.run_palette_item(item);
                             }
                         }
                     }
@@ -1297,7 +1899,28 @@ impl NovaApp {
                     let ignore: Vec<String> =
                         self.config.suggest_ignore.lines().map(|l| l.trim().to_string()).filter(|l| !l.is_empty()).collect();
                     let keep = self.suggest.items.get(self.suggest.selected).cloned();
-                    self.suggest.items = self.history.suggest(&buf, max, self.config.suggest_ranking, &ignore);
+                    // Complétions d'abord calculées : elles gardent des places dans la liste
+                    // même quand l'historique est très fourni.
+                    let completions = if self.config.completions {
+                        let cwd = self.panes.get(&id).and_then(|p| p.cwd());
+                        self.completer.complete(&buf, cwd.as_deref(), max)
+                    } else {
+                        Vec::new()
+                    };
+                    let reserved = if max <= 1 { 0 } else { completions.len().min(max / 2) };
+                    let mut items = self.history.suggest(&buf, max - reserved, self.config.suggest_ranking, &ignore);
+                    let mut descs: Vec<Option<String>> = vec![None; items.len()];
+                    for c in completions {
+                        if items.len() >= max {
+                            break;
+                        }
+                        if !items.iter().any(|i| i.trim_end() == c.full.trim_end()) {
+                            items.push(c.full);
+                            descs.push(Some(c.desc));
+                        }
+                    }
+                    self.suggest.items = items;
+                    self.suggest.descs = descs;
                     // Garder la sélection si elle prolonge encore ce qui est tapé.
                     self.suggest.selected = keep
                         .and_then(|k| self.suggest.items.iter().position(|i| *i == k))
@@ -1308,6 +1931,7 @@ impl NovaApp {
             }
             None => {
                 self.suggest.items.clear();
+                self.suggest.descs.clear();
                 self.suggest.buffer.clear();
                 self.suggest.selected = 0;
             }
@@ -1378,13 +2002,161 @@ impl NovaApp {
                 ctx.fonts(|f| f.layout_job(job))
             };
             lp.galley(Pos2::new(r.left() + 6.0, r.center().y - galley.size().y * 0.5), galley, fgc);
-            let n = self.history.count(item);
-            if n > 1 {
-                lp.text(r.right_center() - Vec2::new(6.0, 0.0), egui::Align2::RIGHT_CENTER, format!("×{n}"), egui::FontId::proportional(11.0), fgc.gamma_multiply(0.45));
+            match self.suggest.descs.get(i).cloned().flatten() {
+                Some(desc) => {
+                    lp.text(r.right_center() - Vec2::new(6.0, 0.0), egui::Align2::RIGHT_CENTER, desc, egui::FontId::proportional(11.0), accent.gamma_multiply(0.8));
+                }
+                None => {
+                    let n = self.history.count(item);
+                    let label = if n > 1 { format!("↺ ×{n}") } else { "↺".to_string() };
+                    lp.text(r.right_center() - Vec2::new(6.0, 0.0), egui::Align2::RIGHT_CENTER, label, egui::FontId::proportional(11.0), fgc.gamma_multiply(0.45));
+                }
             }
         }
         let hint = Rect::from_min_size(Pos2::new(x + 10.0, y + 4.0 + items.len() as f32 * row_h), Vec2::new(w - 20.0, row_h));
         lp.text(hint.left_center(), egui::Align2::LEFT_CENTER, "→ accepter   Ctrl+→ un mot   Ctrl+↑↓ choisir", egui::FontId::proportional(11.0), fgc.gamma_multiply(0.5));
+    }
+
+    /// Décorations des blocs d'un panneau ; retourne l'action cliquée.
+    fn render_blocks(&self, ctx: &egui::Context, painter: &egui::Painter, id: u64, pr: Rect, time: f64) -> Option<(u64, u32, BlockAct)> {
+        let pane = self.panes.get(&id)?;
+        if pane.vis_blocks.is_empty() || pane.term.mode().contains(TermMode::ALT_SCREEN) {
+            return None;
+        }
+        let origin = pr.min + egui::vec2(self.config.padding, self.config.padding);
+        let ch = self.metrics.cell_h;
+        let fg = rgb(self.theme.foreground);
+        let accent = rgb(self.theme.cursor);
+        let green = rgb(self.theme.ansi[2]);
+        let red = rgb(self.theme.ansi[1]);
+        let clip = painter.with_clip_rect(pr.intersect(painter.clip_rect()));
+        // Survol réel du terminal (pas d'une fenêtre posée dessus, sauf nos barres de blocs).
+        let hover = ctx.input(|i| i.pointer.hover_pos()).filter(|p| {
+            pr.contains(*p)
+                && ctx.layer_id_at(*p).is_none_or(|l| {
+                    l.order == egui::Order::Background
+                        || pane.vis_blocks.iter().any(|b| l.id == Id::new(("block_bar", id, b.id)))
+                })
+        });
+        let mut action = None;
+        for vb in &pane.vis_blocks {
+            let Some(block) = pane.block(vb.id) else { continue };
+            let top = origin.y + vb.top_row as f32 * ch;
+            let bottom = origin.y + (vb.end_row + 1) as f32 * ch;
+            if bottom < pr.top() || top > pr.bottom() {
+                continue;
+            }
+            let (color, ok) = match block.finished {
+                None => (accent, None),
+                Some((0, _)) => (green, Some(true)),
+                Some(_) => (red, Some(false)),
+            };
+            if self.config.blocks_separator && vb.top_row > 0 {
+                clip.line_segment([Pos2::new(pr.left() + 2.0, top - 1.0), Pos2::new(pr.right() - 2.0, top - 1.0)], Stroke::new(1.0, fg.gamma_multiply(0.08)));
+            }
+            if self.config.blocks_gutter {
+                let x = pr.left() + (self.config.padding * 0.5 - 1.5).max(0.0);
+                clip.rect_filled(Rect::from_min_max(Pos2::new(x, top + 1.0), Pos2::new(x + 3.0, bottom - 1.0)), CornerRadius::same(2), color.gamma_multiply(0.75));
+            }
+            if let Some((hid, hb, until)) = self.highlight {
+                if hid == id && hb == vb.id && time < until {
+                    let a = ((until - time) / 0.8) as f32;
+                    clip.rect_filled(Rect::from_min_max(Pos2::new(pr.left(), top), Pos2::new(pr.right(), bottom)), 0.0, accent.gamma_multiply(0.12 * a));
+                }
+            }
+            let cmd_y = origin.y + vb.cmd_row as f32 * ch + ch * 0.5;
+            let hovered = hover.is_some_and(|p| p.y >= top && p.y < bottom);
+            if hovered && self.config.blocks_actions && cmd_y > pr.top() && cmd_y < pr.bottom() {
+                // Barre d'actions au survol, à droite de la ligne de commande.
+                let pos = Pos2::new(pr.right() - self.config.padding - 4.0, cmd_y - 11.0);
+                egui::Area::new(Id::new(("block_bar", id, vb.id)))
+                    .order(egui::Order::Foreground)
+                    .pivot(egui::Align2::RIGHT_TOP)
+                    .fixed_pos(pos)
+                    .show(ctx, |ui| {
+                        egui::Frame::NONE
+                            .fill(surface_color(&self.theme))
+                            .stroke(Stroke::new(1.0, color.gamma_multiply(0.6)))
+                            .corner_radius(CornerRadius::same(6))
+                            .inner_margin(egui::Margin::symmetric(4, 1))
+                            .show(ui, |ui| {
+                                ui.horizontal(|ui| {
+                                    ui.spacing_mut().item_spacing.x = 2.0;
+                                    let status = match block.finished {
+                                        None => format!("⏳ {}", fmt_duration(block.elapsed())),
+                                        Some((0, d)) => format!("✔ {}", fmt_duration(d)),
+                                        Some((c, d)) => format!("✖ {c} · {}", fmt_duration(d)),
+                                    };
+                                    ui.label(egui::RichText::new(status).small().color(color));
+                                    let b = |ui: &mut egui::Ui, t: &str, tip: &str| ui.small_button(t).on_hover_text(tip).clicked();
+                                    if b(ui, "📋 cmd", "Copier la commande") {
+                                        action = Some((id, vb.id, BlockAct::CopyCommand));
+                                    }
+                                    if b(ui, "📋 sortie", "Copier la sortie") {
+                                        action = Some((id, vb.id, BlockAct::CopyOutput));
+                                    }
+                                    if b(ui, "↻", "Relancer la commande") {
+                                        action = Some((id, vb.id, BlockAct::Rerun));
+                                    }
+                                    if b(ui, "⬆", "Remonter au début de la commande") {
+                                        action = Some((id, vb.id, BlockAct::ScrollTop));
+                                    }
+                                });
+                            });
+                    });
+                continue;
+            }
+            let elapsed = block.elapsed();
+            let show = match self.config.blocks_badges {
+                BadgeMode::Always => true,
+                BadgeMode::Notable => ok == Some(false) || elapsed.as_secs_f32() >= 2.0,
+                BadgeMode::Never => false,
+            };
+            if show && cmd_y > pr.top() && cmd_y < pr.bottom() {
+                let text = match block.finished {
+                    None => format!("⏳ {}", fmt_duration(elapsed)),
+                    Some((0, d)) => format!("✔ {}", fmt_duration(d)),
+                    Some((c, d)) => format!("✖ {c} · {}", fmt_duration(d)),
+                };
+                let font = egui::FontId::proportional((self.config.font_size * 0.78).clamp(10.0, 14.0));
+                let galley = ctx.fonts(|f| f.layout_no_wrap(text, font, color));
+                let size = galley.size() + Vec2::new(12.0, 4.0);
+                let rect = Rect::from_min_size(Pos2::new(pr.right() - self.config.padding - size.x - 4.0, cmd_y - size.y * 0.5), size);
+                clip.rect_filled(rect, CornerRadius::same(7), surface_color(&self.theme).gamma_multiply(0.92));
+                clip.rect_stroke(rect, CornerRadius::same(7), Stroke::new(1.0, color.gamma_multiply(0.45)), egui::epaint::StrokeKind::Inside);
+                clip.galley(rect.min + Vec2::new(6.0, 2.0), galley, color);
+            }
+        }
+        if pane.running.is_some() {
+            ctx.request_repaint_after(Duration::from_millis(500));
+        }
+        action
+    }
+
+    fn block_action(&mut self, pane_id: u64, block: u32, act: BlockAct) {
+        match act {
+            BlockAct::CopyCommand => {
+                if let Some(cmd) = self.block_command(pane_id, block) {
+                    self.ctx.copy_text(cmd);
+                    self.toast("Commande copiée");
+                }
+            }
+            BlockAct::CopyOutput => self.copy_block_output(pane_id, block),
+            BlockAct::Rerun => {
+                if let Some(cmd) = self.block_command(pane_id, block) {
+                    self.insert_command(pane_id, &cmd, true);
+                }
+            }
+            BlockAct::ScrollTop => {
+                if let Some(pane) = self.panes.get_mut(&pane_id) {
+                    if let Some(vb) = pane.vis_blocks.iter().find(|b| b.id == block) {
+                        let delta = -vb.top_row;
+                        pane.term.scroll_display(Scroll::Delta(delta));
+                        pane.dirty = true;
+                    }
+                }
+            }
+        }
     }
 
     fn render_history_popup(&mut self, ctx: &egui::Context) {
@@ -1490,16 +2262,80 @@ impl NovaApp {
         }
     }
 
-    fn palette_items(&self, query: &str) -> Vec<Action> {
-        ALL_ACTIONS
-            .iter()
-            .copied()
-            .filter(|a| !a.only_when_searching())
-            .filter(|a| {
-                query.is_empty()
-                    || fuzzy_match(query, &format!("{} {} {}", a.label(), a.category(), a.id()))
-            })
-            .collect()
+    fn open_palette(&mut self, mode: PaletteMode) {
+        self.history_popup = None;
+        self.palette = Some(Palette { query: String::new(), selected: 0, focus: true, mode });
+    }
+
+    /// Éléments de la palette : (élément, libellé, texte de droite).
+    fn palette_items(&self, query: &str, mode: PaletteMode) -> Vec<(PaletteItem, String, String)> {
+        let ok = |text: &str| query.is_empty() || fuzzy_match(query, text);
+        let mut out = Vec::new();
+        if mode != PaletteMode::Profiles {
+            for (i, sn) in self.config.snippets.iter().enumerate() {
+                let label = format!("▶ {}", sn.name);
+                if ok(&format!("{label} {} snippet favori", sn.command)) {
+                    out.push((PaletteItem::Snippet(i), label, truncate(&sn.command, 40)));
+                }
+            }
+        }
+        if mode != PaletteMode::Snippets {
+            for (i, p) in self.config.profiles.iter().enumerate() {
+                let label = format!("▣ Profil : {}", p.name);
+                if ok(&format!("{label} projet workspace")) {
+                    out.push((PaletteItem::Profile(i), label, format!("{} onglet(s)", p.tabs.len())));
+                }
+            }
+        }
+        if mode == PaletteMode::All {
+            for a in ALL_ACTIONS.iter().copied().filter(|a| !a.only_when_searching()) {
+                if ok(&format!("{} {} {}", a.label(), a.category(), a.id())) {
+                    let sc = self.bindings.first_shortcut(a);
+                    let right = if sc.is_empty() { a.category().to_string() } else { format!("{}   {sc}", a.category()) };
+                    out.push((PaletteItem::Action(a), a.label().to_string(), right));
+                }
+            }
+            if !query.is_empty() {
+                for name in self.config.theme_names() {
+                    let label = format!("◐ Thème : {name}");
+                    if ok(&format!("{label} theme couleurs")) {
+                        out.push((PaletteItem::Theme(name), label, "Apparence".into()));
+                    }
+                }
+            }
+        }
+        out
+    }
+
+    fn run_palette_item(&mut self, item: PaletteItem) {
+        match item {
+            PaletteItem::Action(a) => self.run_action(a),
+            PaletteItem::Snippet(i) => self.run_snippet(i),
+            PaletteItem::Profile(i) => self.open_profile(i),
+            PaletteItem::Theme(name) => {
+                self.config.theme_name = name;
+                self.config.custom_theme = None;
+                self.config_dirty = true;
+            }
+        }
+    }
+
+    /// Insère (ou exécute) un snippet ; variables {clipboard}, {selection}, {cwd}.
+    fn run_snippet(&mut self, index: usize) {
+        let Some(sn) = self.config.snippets.get(index).cloned() else { return };
+        let Some(id) = self.focused_id() else { return };
+        let mut cmd = sn.command.clone();
+        if cmd.contains("{clipboard}") {
+            cmd = cmd.replace("{clipboard}", &get_clipboard().unwrap_or_default());
+        }
+        if cmd.contains("{selection}") {
+            cmd = cmd.replace("{selection}", &self.selection_text().unwrap_or_default());
+        }
+        if cmd.contains("{cwd}") {
+            let cwd = self.panes.get(&id).and_then(|p| p.cwd()).map(|p| p.display().to_string()).unwrap_or_default();
+            cmd = cmd.replace("{cwd}", &cwd);
+        }
+        self.insert_command(id, &cmd, sn.run);
     }
 
     // ------------------------------------------------------------------
@@ -1648,15 +2484,15 @@ impl NovaApp {
     fn reload_bg_image(&mut self) {
         self.bg_texture = None;
         let Some(path) = &self.config.bg_image else { return };
-        match image::open(path) {
-            Ok(img) => {
-                let rgba = img.to_rgba8();
-                let size = [rgba.width() as usize, rgba.height() as usize];
-                let pixels = rgba.into_raw();
-                let color_image = egui::ColorImage::from_rgba_unmultiplied(size, &pixels);
+        match std::fs::read(path).map_err(|e| e.to_string()).and_then(|b| crate::images::decode_bytes(&b)) {
+            Ok(d) => {
+                let color_image = (*d.image).clone();
                 self.bg_texture = Some(self.ctx.load_texture("bg_image", color_image, TextureOptions::LINEAR));
             }
-            Err(e) => eprintln!("NovaTerm: image de fond illisible ({path}): {e}"),
+            Err(e) => {
+                eprintln!("NovaTerm: image de fond illisible ({path}): {e}");
+                self.toast(format!("Image de fond illisible : {e}"));
+            }
         }
     }
 
@@ -1690,10 +2526,23 @@ impl NovaApp {
             if self.font_catalog.is_none() && !self.config.font_family.is_empty() {
                 self.font_catalog = Some(fonts::discover());
             }
-            fonts::install(&self.ctx, &self.config.font_family, self.font_catalog.as_ref());
+            // Garde-fou : si cette police fait planter le rendu, le prochain lancement
+            // reviendra automatiquement à la police intégrée.
+            guard::arm(&format!("font:{}", self.config.font_family));
+            self.guard_frames = Some(self.frames + 30);
+            match fonts::install(&self.ctx, &self.config.font_family, self.font_catalog.as_ref()) {
+                Ok(()) => {
+                    let name = if self.config.font_family.is_empty() { fonts::BUILTIN } else { &self.config.font_family };
+                    self.toast(format!("Police : {name}"));
+                }
+                Err(e) => {
+                    self.toast(format!("{e} : police intégrée conservée"));
+                    self.config.font_family.clear();
+                    self.applied_font.clear();
+                    self.config_dirty = true;
+                }
+            }
             self.font_reload = 2;
-            let name = if self.config.font_family.is_empty() { fonts::BUILTIN } else { &self.config.font_family };
-            self.toast(format!("Police : {name}"));
         }
         if self.font_reload > 0 {
             self.font_reload -= 1;
@@ -1765,7 +2614,22 @@ impl NovaApp {
                         if panes > 1 {
                             text.push_str(&format!("  ⊞{panes}"));
                         }
-                        let label = egui::RichText::new(text).color(if active { fg } else { fg.gamma_multiply(0.6) }).strong();
+                        if self.tabs[i].broadcast {
+                            text.insert_str(0, "📡 ");
+                        }
+                        let (badge, badge_color) = match self.tabs[i].activity {
+                            Some(Some(true)) => ("✔ ", rgb(self.theme.ansi[2])),
+                            Some(Some(false)) => ("✖ ", rgb(self.theme.ansi[1])),
+                            Some(None) => ("● ", accent),
+                            None => ("", fg),
+                        };
+                        let mut job = egui::text::LayoutJob::default();
+                        let font = egui::TextStyle::Button.resolve(ui.style());
+                        if !badge.is_empty() {
+                            job.append(badge, 0.0, egui::TextFormat::simple(font.clone(), badge_color));
+                        }
+                        job.append(&text, 0.0, egui::TextFormat::simple(font, if active { fg } else { fg.gamma_multiply(0.6) }));
+                        let label = egui::WidgetText::LayoutJob(job);
                         let btn = egui::Button::new(label)
                             .fill(if active { fg.gamma_multiply(0.12) } else { Color32::TRANSPARENT })
                             .stroke(if active { Stroke::new(1.0, accent.gamma_multiply(0.6)) } else { Stroke::NONE });
@@ -1885,6 +2749,16 @@ impl NovaApp {
         if self.config.suggestions && self.focused_id().and_then(|id| self.panes.get(&id)).is_some_and(|p| p.integration && !p.suggest_conflict) {
             info.push_str("  ·  ✨ suggestions");
         }
+        if self.tabs.get(self.active).is_some_and(|t| t.broadcast) {
+            info.push_str("  ·  📡 DIFFUSION");
+        }
+        if let Some(p) = self.focused_id().and_then(|id| self.panes.get(&id)) {
+            if let Some(id) = p.running {
+                if let Some(b) = p.block(id) {
+                    info.push_str(&format!("  ·  ⏳ {} ({})", truncate(&b.command, 30), fmt_duration(b.elapsed())));
+                }
+            }
+        }
         let hint = format!(
             "{} : commandes  ·  {} : aide",
             self.bindings.first_shortcut(Action::CommandPalette),
@@ -1940,7 +2814,7 @@ impl NovaApp {
     fn finish_selection(&mut self, id: u64) {
         let Some(pane) = self.panes.get_mut(&id) else { return };
         pane.selecting = false;
-        if let Some(text) = pane.term.selection_to_string().filter(|t| !t.is_empty()) {
+        if let Some(text) = pane.term.selection_to_string().map(|t| blocks::strip_tags(&t)).filter(|t| !t.is_empty()) {
             set_primary_selection(&text);
             if self.config.copy_on_select {
                 self.ctx.copy_text(text);
@@ -1949,7 +2823,8 @@ impl NovaApp {
     }
 
     /// Lien sous le pointeur : (url, ligne écran, col début, col fin).
-    fn link_at(&self, id: u64, rect: Rect, pos: Pos2) -> Option<(String, usize, usize, usize)> {
+    /// Lien sous le pointeur : (cible, ligne écran, col début, col fin).
+    fn link_at(&self, id: u64, rect: Rect, pos: Pos2) -> Option<(Target, usize, usize, usize)> {
         let pane = self.panes.get(&id)?;
         let (col, row) = render::pixel_to_cell(pos, rect, &self.config, self.metrics, pane.cols, pane.rows);
         let offset = pane.term.grid().display_offset() as i32;
@@ -1959,8 +2834,82 @@ impl NovaApp {
         }
         let grid = pane.term.grid();
         let cols = pane.term.columns();
+        // Lien OSC 8 (posé par ls --hyperlink, gcc, cargo…).
+        if let Some(h) = grid[line][Column(col)].hyperlink() {
+            let uri = h.uri().to_string();
+            let same = |c: usize| grid[line][Column(c)].hyperlink().is_some_and(|x| x.uri() == uri);
+            let mut s = col;
+            while s > 0 && same(s - 1) {
+                s -= 1;
+            }
+            let mut e = col + 1;
+            while e < cols && same(e) {
+                e += 1;
+            }
+            let target = match uri.strip_prefix("file://") {
+                Some(rest) => {
+                    let path = &rest[rest.find('/').unwrap_or(0)..];
+                    Target::File { path: PathBuf::from(path), line: None, col: None }
+                }
+                None => Target::Url(uri),
+            };
+            return Some((target, row, s, e));
+        }
         let chars: Vec<char> = (0..cols).map(|c| grid[line][Column(c)].c).collect();
-        find_link(&chars, col).map(|(u, s, e)| (u, row, s, e))
+        let hit = if self.config.detect_paths {
+            links::find_at(&chars, col, pane.cwd().as_deref())
+        } else {
+            links::find_url(&chars, col)
+        };
+        hit.map(|h| (h.target, row, h.start, h.end))
+    }
+
+    /// Ouvre un lien : navigateur, éditeur configuré ou nouvel onglet.
+    fn open_target(&mut self, target: Target) {
+        match target {
+            Target::Url(url) => {
+                // Seuls les schémas courants sont ouverts (pas de javascript:, smb:, etc.).
+                let scheme = url.split(':').next().unwrap_or("").to_ascii_lowercase();
+                if !matches!(scheme.as_str(), "http" | "https" | "mailto" | "ftp" | "sftp" | "ssh") {
+                    self.toast(format!("Lien « {scheme}: » non ouvert par sécurité"));
+                    return;
+                }
+                open_external(&url);
+                self.toast("Ouverture du lien…");
+            }
+            Target::File { path, line, col } => {
+                let name = path.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default();
+                match links::editor_command(&self.config.editor_command, &path, line, col) {
+                    Some(cmd) if cmd.starts_with("@tab ") => {
+                        let cmd = cmd.trim_start_matches("@tab ").to_string();
+                        let dir = path.parent().map(PathBuf::from);
+                        if let Some(pid) = self.spawn_pane(dir) {
+                            self.tabs.push(Tab::new(pid));
+                            self.active = self.tabs.len() - 1;
+                            if let Some(p) = self.panes.get_mut(&pid) {
+                                p.write_input(format!("{cmd}\r").as_bytes());
+                            }
+                        }
+                    }
+                    Some(cmd) => {
+                        if let Err(e) = platform::spawn_command_line(&cmd) {
+                            self.toast(format!("Éditeur introuvable ({e}) : vérifiez Paramètres → Liens"));
+                            return;
+                        }
+                        self.toast(format!("Ouverture de {name}…"));
+                    }
+                    None => {
+                        // Sécurité : jamais d'exécution via un clic (programme, .desktop, AppImage…).
+                        if is_executable_file(&path) {
+                            self.toast(format!("« {name} » est un programme : non ouvert par sécurité"));
+                            return;
+                        }
+                        open_external(&path.display().to_string());
+                        self.toast(format!("Ouverture de {name}…"));
+                    }
+                }
+            }
+        }
     }
 
     fn mouse_cell(&self, id: u64, rect: Rect, pos: Pos2) -> (usize, usize) {
@@ -2064,19 +3013,57 @@ impl NovaApp {
             self.pane_rects = leaves.clone();
             let multi = leaves.len() > 1;
             let mut ghost_target: Option<(u64, Rect)> = None;
+            let blinking = self.config.cursor_blink
+                && ctx.input(|i| i.focused)
+                && (self.config.cursor_blink_timeout == 0 || time - self.last_input_time < self.config.cursor_blink_timeout as f64);
+            let geo = (self.metrics.cell_w.to_bits(), self.metrics.cell_h.to_bits(), self.config.font_size.to_bits(), self.config.padding.to_bits());
+            let theme_hash = {
+                use std::hash::{Hash, Hasher};
+                let mut h = std::collections::hash_map::DefaultHasher::new();
+                self.theme_sig.hash(&mut h);
+                self.font_reload.hash(&mut h);
+                self.applied_font.hash(&mut h);
+                h.finish()
+            };
+            let render_key = |r: Rect| -> u64 {
+                use std::hash::{Hash, Hasher};
+                let mut h = std::collections::hash_map::DefaultHasher::new();
+                (r.min.x.to_bits(), r.min.y.to_bits(), r.max.x.to_bits(), r.max.y.to_bits(), geo, theme_hash).hash(&mut h);
+                h.finish()
+            };
 
             // Panneaux.
             for (id, pr) in &leaves {
                 let (cols, rows) = render::grid_size(*pr, &self.config, self.metrics);
                 let Some(pane) = self.panes.get_mut(id) else { continue };
                 pane.resize(cols, rows, self.metrics.cell_w, self.metrics.cell_h);
-                if pane.dirty || pane.cached.is_empty() {
-                    pane.cached =
-                        render::build_shapes(&self.ctx, pane, *pr, &self.theme, &self.config, self.metrics, &mut self.font_cache);
+                if pane.dirty || pane.cached.is_empty() || pane.cache_key != render_key(*pr) {
+                    render::build_shapes(&self.ctx, pane, *pr, &self.theme, &self.config, self.metrics, &mut self.font_cache, render_key(*pr));
+                    pane.refresh_marks();
                     pane.dirty = false;
                 }
                 painter.extend(pane.cached.iter().cloned());
-                render::draw_cursor(&painter, pane, *pr, &self.theme, &self.config, self.metrics, *id == focused, time);
+                // Images en ligne.
+                if !pane.vis_images.is_empty() {
+                    let origin = pr.min + egui::vec2(self.config.padding, self.config.padding);
+                    let clip = painter.with_clip_rect(pr.intersect(painter.clip_rect()));
+                    for (row, col, iid) in pane.vis_images.clone() {
+                        let Some(img) = pane.images.get_mut(&iid) else { continue };
+                        let tex = img.texture.get_or_insert_with(|| {
+                            self.ctx.load_texture(format!("nova_img_{id}_{iid}"), (*img.image).clone(), TextureOptions::LINEAR)
+                        });
+                        let r = Rect::from_min_size(
+                            Pos2::new(origin.x + col as f32 * self.metrics.cell_w, origin.y + row as f32 * self.metrics.cell_h),
+                            Vec2::new(img.cols as f32 * self.metrics.cell_w, img.rows as f32 * self.metrics.cell_h),
+                        );
+                        // Conserver les proportions dans la zone réservée.
+                        let isz = Vec2::new(img.image.size[0] as f32, img.image.size[1] as f32);
+                        let scale = (r.width() / isz.x).min(r.height() / isz.y);
+                        let draw = Rect::from_min_size(r.min, isz * scale);
+                        clip.image(tex.id(), draw, Rect::from_min_max(Pos2::ZERO, Pos2::new(1.0, 1.0)), Color32::WHITE);
+                    }
+                }
+                render::draw_cursor(&painter, pane, *pr, &self.theme, &self.config, self.metrics, *id == focused, time, blinking);
                 if *id == focused {
                     ghost_target = Some((*id, *pr));
                 }
@@ -2106,6 +3093,26 @@ impl NovaApp {
 
             if let Some((gid, gr)) = ghost_target {
                 self.render_suggestions(ui.ctx(), &painter, gid, gr);
+            }
+
+            // Blocs de commandes (barre de statut à gauche, badge, actions au survol).
+            let mut block_actions = Vec::new();
+            if self.config.blocks_enabled {
+                for (id, pr) in &leaves {
+                    if let Some(a) = self.render_blocks(ui.ctx(), &painter, *id, *pr, time) {
+                        block_actions.push(a);
+                    }
+                }
+            }
+            for (pane_id, bid, act) in block_actions {
+                self.block_action(pane_id, bid, act);
+            }
+
+            // Diffusion du clavier : cadre rouge sur les panneaux concernés.
+            if self.tabs.get(self.active).is_some_and(|t| t.broadcast) {
+                for (_, pr) in &leaves {
+                    painter.rect_stroke(pr.shrink(1.0), 0.0, Stroke::new(2.0, rgb(self.theme.ansi[1]).gamma_multiply(0.8)), egui::epaint::StrokeKind::Middle);
+                }
             }
 
             // Séparateurs.
@@ -2200,9 +3207,10 @@ impl NovaApp {
                     continue;
                 }
 
-                // Liens : Ctrl + survol = soulignés, Ctrl + clic = ouverture.
+                // Liens : Ctrl + survol = soulignés, Ctrl + clic = ouverture (ou simple clic).
                 let mut hovered_link = None;
-                if self.config.ctrl_click_links && mods_now.ctrl && resp.hovered() {
+                let link_mode = self.config.ctrl_click_links && (mods_now.ctrl || self.config.link_plain_click);
+                if link_mode && resp.hovered() && !any_down {
                     if let Some(pos) = resp.hover_pos() {
                         hovered_link = self.link_at(id, pr, pos);
                         if let Some((_, row, s, e)) = &hovered_link {
@@ -2223,9 +3231,8 @@ impl NovaApp {
                     self.clear_egui_focus();
                 }
                 if resp.clicked() {
-                    if let Some((url, ..)) = hovered_link {
-                        open_external(&url);
-                        self.toast("Ouverture du lien…");
+                    if let Some((target, ..)) = hovered_link {
+                        self.open_target(target);
                     } else if let Some(pane) = self.panes.get_mut(&id) {
                         pane.term.selection = None;
                         pane.dirty = true;
@@ -2383,13 +3390,19 @@ impl NovaApp {
         let mut query = std::mem::take(&mut pal.query);
         let mut selected = pal.selected;
         let focus = std::mem::take(&mut pal.focus);
+        let mode = pal.mode;
         let surface = surface_color(&self.theme);
         let fg = rgb(self.theme.foreground);
         let accent = rgb(self.theme.cursor);
-        let mut run: Option<Action> = None;
+        let mut run: Option<PaletteItem> = None;
         let mut close = false;
         let screen = ctx.screen_rect();
-        let width = (screen.width() - 40.0).clamp(240.0, 560.0);
+        let width = (screen.width() - 40.0).clamp(240.0, 600.0);
+        let hint = match mode {
+            PaletteMode::All => "Commande, snippet, profil ou « thème … »  (↑ ↓ Entrée, Échap)",
+            PaletteMode::Snippets => "Commandes favorites…  (Paramètres → Snippets pour en ajouter)",
+            PaletteMode::Profiles => "Profils de projet…  (« Enregistrer la disposition comme profil »)",
+        };
         egui::Area::new(Id::new("palette"))
             .order(egui::Order::Foreground)
             .anchor(egui::Align2::CENTER_TOP, Vec2::new(0.0, 70.0))
@@ -2406,7 +3419,7 @@ impl NovaApp {
                             egui::TextEdit::singleline(&mut query)
                                 .id(palette_input_id())
                                 .desired_width(f32::INFINITY)
-                                .hint_text("Tapez une commande…  (↑ ↓ Entrée, Échap pour fermer)"),
+                                .hint_text(hint),
                         );
                         if focus {
                             resp.request_focus();
@@ -2415,13 +3428,13 @@ impl NovaApp {
                             selected = 0;
                         }
                         ui.add_space(6.0);
-                        let items = self.palette_items(&query);
+                        let items = self.palette_items(&query, mode);
                         if items.is_empty() {
-                            ui.label(egui::RichText::new("Aucune commande").color(fg.gamma_multiply(0.6)));
+                            ui.label(egui::RichText::new("Aucun résultat").color(fg.gamma_multiply(0.6)));
                         }
                         selected = selected.min(items.len().saturating_sub(1));
                         egui::ScrollArea::vertical().max_height(360.0).show(ui, |ui| {
-                            for (i, a) in items.iter().enumerate() {
+                            for (i, (item, label, right)) in items.iter().enumerate() {
                                 let sel = i == selected;
                                 let (rect, r) = ui.allocate_exact_size(Vec2::new(ui.available_width(), 26.0), Sense::click());
                                 if sel {
@@ -2434,12 +3447,10 @@ impl NovaApp {
                                 p.text(
                                     rect.left_center() + Vec2::new(8.0, 0.0),
                                     egui::Align2::LEFT_CENTER,
-                                    a.label(),
+                                    label,
                                     egui::FontId::proportional(14.0),
                                     fg,
                                 );
-                                let sc = self.bindings.first_shortcut(*a);
-                                let right = if sc.is_empty() { a.category().to_string() } else { format!("{}   {sc}", a.category()) };
                                 p.text(
                                     rect.right_center() - Vec2::new(8.0, 0.0),
                                     egui::Align2::RIGHT_CENTER,
@@ -2448,7 +3459,7 @@ impl NovaApp {
                                     fg.gamma_multiply(0.55),
                                 );
                                 if r.clicked() {
-                                    run = Some(*a);
+                                    run = Some(item.clone());
                                 }
                             }
                         });
@@ -2462,10 +3473,10 @@ impl NovaApp {
             pal.query = query;
             pal.selected = selected;
         }
-        if let Some(a) = run {
+        if let Some(item) = run {
             self.palette = None;
             self.clear_egui_focus();
-            self.run_action(a);
+            self.run_palette_item(item);
         } else if close {
             self.palette = None;
             self.clear_egui_focus();
@@ -2590,6 +3601,200 @@ impl NovaApp {
         }
     }
 
+    /// Exécute le script de démo : injecte touches et texte, capture l'écran.
+    fn run_demo(&mut self, ctx: &egui::Context, time: f64) {
+        let Some(demo) = self.demo.as_mut() else { return };
+        ctx.request_repaint_after(Duration::from_millis(50));
+        // Capture reçue ?
+        let shot = ctx.input(|i| {
+            i.events.iter().find_map(|e| match e {
+                egui::Event::Screenshot { image, .. } => Some(image.clone()),
+                _ => None,
+            })
+        });
+        let received = match (shot, demo.pending_shot.is_some()) {
+            (Some(img), true) => demo.pending_shot.take().map(|p| (img, p)),
+            _ => None,
+        };
+        if let Some((img, path)) = received {
+            let mut rgba = Vec::with_capacity(img.pixels.len() * 4);
+            for p in &img.pixels {
+                let [r, g, b, _] = p.to_srgba_unmultiplied();
+                rgba.extend_from_slice(&[r, g, b, 255]);
+            }
+            if let Some(buf) = image::RgbaImage::from_raw(img.size[0] as u32, img.size[1] as u32, rgba) {
+                if let Some(parent) = path.parent() {
+                    let _ = std::fs::create_dir_all(parent);
+                }
+                match buf.save(&path) {
+                    Ok(()) => println!("capture : {}", path.display()),
+                    Err(e) => eprintln!("NovaTerm: capture impossible: {e}"),
+                }
+            }
+        }
+        if demo.pending_shot.is_some() || time < demo.resume_at {
+            return;
+        }
+        let Some(step) = demo.steps.pop_front() else { return };
+        match step {
+            DemoStep::Wait(s) => demo.resume_at = time + s,
+            DemoStep::Type(t) => {
+                match self.palette.as_mut() {
+                    Some(p) => {
+                        p.query.push_str(&t);
+                        p.selected = 0;
+                    }
+                    None => self.pending.push(Pending::Text(t)),
+                }
+                demo.resume_at = time + 0.15;
+            }
+            DemoStep::Key(c) => {
+                let mods = Modifiers { ctrl: c.ctrl, shift: c.shift, alt: c.alt, command: c.ctrl, ..Default::default() };
+                let ctx_keys = KeyContext { searching: self.search.is_some(), prompt_nav: false };
+                match self.bindings.find(c.key, None, &mods, &ctx_keys) {
+                    Some(action) => self.pending.push(Pending::Action(action)),
+                    None => match (self.palette.is_some(), c.key) {
+                        (true, Key::Escape) => self.pending.push(Pending::Ui(UiCmd::PaletteClose)),
+                        _ => self.pending.push(Pending::Key { key: c.key, mods }),
+                    },
+                }
+                demo.resume_at = time + 0.15;
+            }
+            DemoStep::Shot(p) => {
+                demo.pending_shot = Some(p);
+                ctx.send_viewport_cmd(egui::ViewportCommand::Screenshot(egui::UserData::default()));
+            }
+            DemoStep::Quit => {
+                self.allow_close = true;
+                ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+            }
+        }
+    }
+
+    /// Bandeau d'information important (mode sans échec, configuration invalide).
+    fn render_banner(&mut self, ctx: &egui::Context) {
+        let Some(msg) = self.banner.clone() else { return };
+        let font_related = msg.contains("olice");
+        let warn = rgb(self.theme.ansi[3]);
+        let mut close = false;
+        let mut open_settings = false;
+        egui::TopBottomPanel::top("banner")
+            .frame(egui::Frame::NONE.fill(warn.gamma_multiply(0.25)).inner_margin(egui::Margin::symmetric(10, 5)))
+            .show(ctx, |ui| {
+                ui.horizontal(|ui| {
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        if ui.small_button("×").on_hover_text("Fermer").clicked() {
+                            close = true;
+                        }
+                        if font_related && ui.small_button("Paramètres de police").clicked() {
+                            open_settings = true;
+                            close = true;
+                        }
+                        ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
+                            ui.label(egui::RichText::new("⚠").color(warn).strong());
+                            ui.add(egui::Label::new(egui::RichText::new(&msg).color(rgb(self.theme.foreground))).wrap());
+                        });
+                    });
+                });
+            });
+        if open_settings {
+            self.settings_open = true;
+            self.settings_ui.page = settings::Page::Font;
+        }
+        if close {
+            self.banner = None;
+        }
+    }
+
+    /// Proposition d'intégration de l'AppImage (premier lancement).
+    fn render_appimage_offer(&mut self, ctx: &egui::Context) {
+        if self.quake || !self.config.appimage_prompt {
+            return;
+        }
+        let Some(path) = self.appimage_offer.clone() else { return };
+        let accent = rgb(self.theme.cursor);
+        let mut choice = 0;
+        egui::TopBottomPanel::top("appimage_offer")
+            .frame(egui::Frame::NONE.fill(accent.gamma_multiply(0.18)).inner_margin(egui::Margin::symmetric(10, 6)))
+            .show(ctx, |ui| {
+                ui.horizontal_wrapped(|ui| {
+                    ui.label(egui::RichText::new("📦").color(accent));
+                    ui.label(
+                        egui::RichText::new("Ajouter NovaTerm au menu des applications ? Le fichier AppImage sera rangé dans ~/Applications.")
+                            .color(rgb(self.theme.foreground)),
+                    )
+                    .on_hover_text(format!("Emplacement actuel : {}", path.display()));
+                    if ui.button("Ranger et ajouter au menu").clicked() {
+                        choice = 1;
+                    }
+                    if ui.button("Ajouter au menu sans déplacer").clicked() {
+                        choice = 2;
+                    }
+                    if ui.small_button("Plus tard").clicked() {
+                        choice = 3;
+                    }
+                    if ui.small_button("Ne plus demander").clicked() {
+                        choice = 4;
+                    }
+                });
+            });
+        match choice {
+            1 | 2 => {
+                match crate::appimage::integrate(choice == 1) {
+                    Ok(p) => self.toast(format!("NovaTerm est dans le menu ({})", p.display())),
+                    Err(e) => self.toast(format!("Intégration impossible : {e}")),
+                }
+                self.appimage_offer = None;
+            }
+            3 => self.appimage_offer = None,
+            4 => {
+                self.config.appimage_prompt = false;
+                self.config_dirty = true;
+                self.appimage_offer = None;
+            }
+            _ => {}
+        }
+    }
+
+    /// Dialogue « Enregistrer la disposition comme profil ».
+    fn render_save_profile(&mut self, ctx: &egui::Context) {
+        let Some((mut name, focus)) = self.save_profile.take() else { return };
+        let mut keep = true;
+        let mut save = false;
+        egui::Modal::new(Id::new("save_profile")).show(ctx, |ui| {
+            ui.set_max_width(380.0);
+            ui.heading("Enregistrer comme profil");
+            ui.label(format!(
+                "Les {} onglet(s) actuels (splits, dossiers, noms) seront enregistrés. Les commandes de démarrage se règlent ensuite dans Paramètres → Session.",
+                self.tabs.len()
+            ));
+            let r = ui.add(egui::TextEdit::singleline(&mut name).hint_text("Nom du profil (ex. GPlus)").desired_width(300.0));
+            if focus {
+                r.request_focus();
+            }
+            if r.lost_focus() && ui.input(|i| i.key_pressed(Key::Enter)) {
+                save = true;
+            }
+            ui.horizontal(|ui| {
+                if ui.button("Enregistrer").clicked() {
+                    save = true;
+                }
+                if ui.button("Annuler").clicked() || ui.input(|i| i.key_pressed(Key::Escape)) {
+                    keep = false;
+                }
+            });
+        });
+        if save && !name.trim().is_empty() {
+            self.save_profile_named(&name);
+            keep = false;
+        }
+        if keep {
+            self.save_profile = Some((name, false));
+        } else {
+            self.clear_egui_focus();
+        }
+    }
+
     /// Rapports de focus (ESC [ I / ESC [ O) pour vim, tmux… quand ils les demandent.
     fn report_focus(&mut self, ctx: &egui::Context) {
         let window_focused = ctx.input(|i| i.focused);
@@ -2613,6 +3818,18 @@ impl NovaApp {
         }
         self.reported_focus = now;
     }
+}
+
+/// Heure locale (0–23), sans dépendance de fuseau horaire.
+fn local_hour() -> u32 {
+    let out = if cfg!(windows) {
+        std::process::Command::new("powershell").args(["-NoProfile", "-Command", "(Get-Date).Hour"]).output()
+    } else {
+        std::process::Command::new("date").arg("+%H").output()
+    };
+    out.ok()
+        .and_then(|o| String::from_utf8_lossy(&o.stdout).trim().parse().ok())
+        .unwrap_or(12)
 }
 
 fn truncate(s: &str, max: usize) -> String {
@@ -2651,6 +3868,15 @@ impl eframe::App for NovaApp {
         }
         let mods = raw.modifiers;
         let searching = self.search.is_some();
+        let key_ctx = {
+            let pane = self.focused_id().and_then(|id| self.panes.get(&id));
+            let list_open = self.config.suggest_list && self.suggest.items.len() > 1;
+            KeyContext {
+                searching,
+                prompt_nav: !list_open
+                    && pane.is_some_and(|p| !p.blocks.is_empty() && !p.term.mode().contains(TermMode::ALT_SCREEN)),
+            }
+        };
         let in_search = focused == Some(search_input_id()) && text_focus;
         let in_palette = self.palette.is_some();
         let in_history = self.history_popup.is_some();
@@ -2776,7 +4002,7 @@ impl eframe::App for NovaApp {
                             _ => {}
                         }
                     }
-                    if let Some(action) = self.bindings.find(key, physical, &kmods, searching) {
+                    if let Some(action) = self.bindings.find(key, physical, &kmods, &key_ctx) {
                         if !text_focus || Self::allowed_in_text_field(action, &kmods, key) {
                             self.pending.push(Pending::Action(action));
                             swallow_text = true;
@@ -2841,8 +4067,18 @@ impl eframe::App for NovaApp {
             }
         }
 
+        self.frames += 1;
+        if self.guard_frames.is_some_and(|n| self.frames >= n) {
+            guard::disarm();
+            self.guard_frames = None;
+        }
+        if !self.pending.is_empty() {
+            self.last_input_time = time;
+        }
         let focused = self.focused_id();
-        if self.config.cursor_blink && focused.is_some() {
+        let blink_alive = ctx.input(|i| i.focused)
+            && (self.config.cursor_blink_timeout == 0 || time - self.last_input_time < self.config.cursor_blink_timeout as f64);
+        if self.config.cursor_blink && focused.is_some() && blink_alive {
             let interval = match self.config.cursor_blink_style {
                 BlinkStyle::Blink => 250,
                 _ => 30,
@@ -2892,6 +4128,7 @@ impl eframe::App for NovaApp {
         }
 
         self.metrics = render::compute_metrics(ctx, &self.config);
+        self.run_demo(ctx, time);
         self.process_pending();
         if self.tabs.is_empty() {
             return;
@@ -2899,6 +4136,18 @@ impl eframe::App for NovaApp {
         self.apply_config_changes();
         self.update_suggestions();
         self.report_focus(ctx);
+        self.process_finished(ctx);
+        self.update_auto_theme(time);
+        self.update_quake(ctx);
+        if let Some(tab) = self.tabs.get_mut(self.active) {
+            tab.activity = None;
+        }
+        if self.config.autosave_secs > 0 && time - self.last_autosave > self.config.autosave_secs as f64 {
+            self.last_autosave = time;
+            if self.frames > 10 {
+                self.save_session();
+            }
+        }
 
         // Taille de fenêtre mémorisée (hors maximisé / plein écran).
         if !self.is_maximized() {
@@ -2918,9 +4167,11 @@ impl eframe::App for NovaApp {
         }
 
         self.render_window_bg(ctx);
-        if self.config.custom_decorations && !self.fullscreen {
+        if self.config.custom_decorations && !self.fullscreen && !self.quake {
             self.render_title_bar(ctx);
         }
+        self.render_banner(ctx);
+        self.render_appimage_offer(ctx);
         self.render_tab_bar(ctx);
         self.render_status_bar(ctx, time);
         self.render_central(ctx, time);
@@ -2941,10 +4192,11 @@ impl eframe::App for NovaApp {
                     integration_active: fp.is_some_and(|p| p.integration),
                     suggest_conflict: fp.is_some_and(|p| p.suggest_conflict),
                     shell_name: if self.config.shell.trim().is_empty() {
-                        std::env::var("SHELL").unwrap_or_else(|_| "?".into())
+                        platform::default_shell()
                     } else {
                         self.config.shell.clone()
                     },
+                    tabs: self.tabs.len(),
                 }
             };
             settings::show(
@@ -2972,6 +4224,19 @@ impl eframe::App for NovaApp {
         if let Some(a) = out.action {
             self.run_action(a);
         }
+        if let Some(i) = out.open_profile {
+            self.open_profile(i);
+        }
+        if let Some(i) = out.run_snippet {
+            self.run_snippet(i);
+        }
+        if out.install_quake_shortcut {
+            let note = match quake::install_shortcut(&self.config.quake_hotkey) {
+                Ok(m) => m,
+                Err(e) => e,
+            };
+            self.settings_ui.quake_note = Some(note);
+        }
         if self.file_browser.is_some() && settings::show_file_browser(ctx, &mut self.file_browser, &mut self.config) {
             self.config_dirty = true;
         }
@@ -2983,6 +4248,27 @@ impl eframe::App for NovaApp {
             }
         }
         self.render_palette(ctx);
+        self.render_save_profile(ctx);
+        if self.theme_import.is_some() {
+            if let Some(path) = settings::show_file_picker(ctx, &mut self.theme_import, "Importer un thème", settings::is_theme_file) {
+                match theme::import_file(&path) {
+                    Ok(mut t) => {
+                        let base = t.name.clone();
+                        let mut n = 2;
+                        while self.config.theme_names().contains(&t.name) {
+                            t.name = format!("{base} {n}");
+                            n += 1;
+                        }
+                        self.config.theme_name = t.name.clone();
+                        self.config.custom_theme = None;
+                        self.toast(format!("Thème « {} » importé", t.name));
+                        self.config.user_themes.push(t);
+                        self.config_dirty = true;
+                    }
+                    Err(e) => self.toast(format!("Import impossible : {e}")),
+                }
+            }
+        }
         self.render_history_popup(ctx);
         self.render_rename(ctx);
         self.render_confirm(ctx);
@@ -2996,6 +4282,11 @@ impl eframe::App for NovaApp {
     }
 
     fn on_exit(&mut self, _gl: Option<&eframe::glow::Context>) {
+        self.save_session();
+        guard::disarm();
+        if self.quake {
+            return;
+        }
         if self.config.remember_window_size && self.window_size.x > 100.0 && self.window_size.y > 100.0 {
             self.config.window_width = self.window_size.x.round();
             self.config.window_height = self.window_size.y.round();
@@ -3016,17 +4307,6 @@ impl eframe::App for NovaApp {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn links() {
-        let line: Vec<char> = "voir https://exemple.fr/a(b). fin".chars().collect();
-        let (url, s, e) = find_link(&line, 8).unwrap();
-        assert_eq!(url, "https://exemple.fr/a(b)");
-        assert_eq!((s, e), (5, 28));
-        assert!(find_link(&line, 1).is_none());
-        let line: Vec<char> = "http://localhost:8000/.".chars().collect();
-        assert_eq!(find_link(&line, 3).unwrap().0, "http://localhost:8000/");
-    }
 
     #[test]
     fn fuzzy() {

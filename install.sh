@@ -21,4 +21,5 @@ command -v gtk-update-icon-cache >/dev/null && gtk-update-icon-cache -q -t "$ICO
 command -v update-desktop-database >/dev/null && update-desktop-database -q "$APPS" || true
 
 echo "NovaTerm installé : $BIN/novaterm (menu : Système → NovaTerm)"
+echo "Pour désinstaller : ./uninstall.sh  (--purge pour effacer aussi les réglages)"
 case ":$PATH:" in *":$BIN:"*) ;; *) echo "⚠ Ajoute $BIN à ton PATH." ;; esac

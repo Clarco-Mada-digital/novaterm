@@ -3,6 +3,7 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
+use alacritty_terminal::grid::Dimensions;
 use alacritty_terminal::index::Point;
 use alacritty_terminal::selection::SelectionRange;
 use alacritty_terminal::term::cell::Flags;
@@ -120,100 +121,140 @@ fn in_selection(point: Point, sel: &SelectionRange) -> bool {
 }
 
 /// Construit les formes (fond, glyphes, sélection) d'un panneau.
+///
+/// Optimisé : chaque ligne a une empreinte (contenu + couleurs + sélection) ; seules
+/// les lignes dont l'empreinte change sont reconstruites. `key` invalide tout le
+/// cache quand la géométrie, la police ou le thème changent.
+#[allow(clippy::too_many_arguments)]
 pub fn build_shapes(
     ctx: &egui::Context,
-    pane: &Pane,
+    pane: &mut Pane,
     rect: Rect,
     theme: &Theme,
     config: &Config,
     metrics: FontMetrics,
     cache: &mut FontCache,
-) -> Vec<Shape> {
-    let mut shapes = Vec::new();
+    key: u64,
+) {
+    use std::hash::{Hash, Hasher};
     let pad = config.padding;
-    let area = Rect::from_min_max(
-        rect.min + egui::vec2(pad, pad),
-        rect.max - egui::vec2(pad, pad),
-    );
+    let area = Rect::from_min_max(rect.min + egui::vec2(pad, pad), rect.max - egui::vec2(pad, pad));
+    let rows = pane.term.screen_lines();
+    if pane.cache_key != key || pane.row_cache.len() != rows {
+        pane.cache_key = key;
+        pane.row_cache = vec![(u64::MAX, Vec::new()); rows];
+    }
 
-    let content = pane.term.renderable_content();
-    let colors = content.colors;
-    let display_offset = content.display_offset;
-    let selection = content.selection;
-
-    for indexed in content.display_iter {
-        let point = indexed.point;
-        let cell = indexed.cell;
-        let vp = match point_to_viewport(display_offset, point) {
-            Some(p) => p,
-            None => continue,
-        };
-        let flags = cell.flags;
-        if flags.contains(Flags::WIDE_CHAR_SPACER) || flags.contains(Flags::LEADING_WIDE_CHAR_SPACER) {
-            continue;
-        }
-        let wide = flags.contains(Flags::WIDE_CHAR);
-        let x = area.left() + point.column.0 as f32 * metrics.cell_w;
-        let y = area.top() + vp.line as f32 * metrics.cell_h;
-        let w = metrics.cell_w * if wide { 2.0 } else { 1.0 };
-        let cell_rect = Rect::from_min_size(Pos2::new(x, y), egui::vec2(w, metrics.cell_h));
-
-        let mut fg = cell.fg;
-        let mut bg = cell.bg;
-        if flags.contains(Flags::INVERSE) {
-            std::mem::swap(&mut fg, &mut bg);
-        }
-        let default_bg =
-            bg == Color::Named(NamedColor::Background) && colors[NamedColor::Background].is_none();
-
-        if !default_bg {
-            let mut c = resolve_rgb(bg, colors, theme);
-            if flags.contains(Flags::DIM) {
-                c = dim(c);
+    struct CellData {
+        col: usize,
+        c: char,
+        fg: [u8; 3],
+        bg: Option<[u8; 3]>,
+        flags: Flags,
+        selected: bool,
+        link: bool,
+    }
+    let mut per_row: Vec<Vec<CellData>> = (0..rows).map(|_| Vec::new()).collect();
+    {
+        let content = pane.term.renderable_content();
+        let colors = content.colors;
+        let display_offset = content.display_offset;
+        let selection = content.selection;
+        for indexed in content.display_iter {
+            let point = indexed.point;
+            let cell = indexed.cell;
+            let Some(vp) = point_to_viewport(display_offset, point) else { continue };
+            if vp.line >= rows {
+                continue;
             }
-            shapes.push(Shape::rect_filled(cell_rect, 0.0, rgb(c)));
-        }
-
-        if let Some(sel) = &selection {
-            if in_selection(point, sel) {
-                let s = theme.selection;
-                shapes.push(Shape::rect_filled(
-                    cell_rect,
-                    0.0,
-                    Color32::from_rgba_unmultiplied(s[0], s[1], s[2], 170),
-                ));
+            let flags = cell.flags;
+            if flags.contains(Flags::WIDE_CHAR_SPACER) || flags.contains(Flags::LEADING_WIDE_CHAR_SPACER) {
+                continue;
             }
-        }
-
-        let ch = cell.c;
-        if ch != ' ' && ch != '\0' && !flags.contains(Flags::HIDDEN) {
-            let galley = cache.get(ctx, ch, style_of(flags), config.font_size);
+            let (mut fg, mut bg) = (cell.fg, cell.bg);
+            if flags.contains(Flags::INVERSE) {
+                std::mem::swap(&mut fg, &mut bg);
+            }
+            let default_bg = bg == Color::Named(NamedColor::Background) && colors[NamedColor::Background].is_none();
+            let bg_rgb = (!default_bg).then(|| {
+                let c = resolve_rgb(bg, colors, theme);
+                if flags.contains(Flags::DIM) {
+                    dim(c)
+                } else {
+                    c
+                }
+            });
             let mut fg_rgb = resolve_rgb(fg, colors, theme);
             if flags.contains(Flags::DIM) {
                 fg_rgb = dim(fg_rgb);
             }
-            let color = rgb(fg_rgb);
-            let gy = y + ((metrics.cell_h - galley.size().y) * 0.5).max(0.0);
-            shapes.push(Shape::galley(Pos2::new(x, gy), galley, color));
-
-            if flags.intersects(Flags::ALL_UNDERLINES) {
-                shapes.push(Shape::rect_filled(
-                    Rect::from_min_size(Pos2::new(x, y + metrics.cell_h - 2.0), egui::vec2(w, 1.5)),
-                    0.0,
-                    color,
-                ));
+            let selected = selection.as_ref().is_some_and(|sel| in_selection(point, sel));
+            if cell.c == ' ' && bg_rgb.is_none() && !selected {
+                continue;
             }
-            if flags.contains(Flags::STRIKEOUT) {
-                shapes.push(Shape::rect_filled(
-                    Rect::from_min_size(Pos2::new(x, y + metrics.cell_h * 0.5), egui::vec2(w, 1.5)),
-                    0.0,
-                    color,
-                ));
-            }
+            per_row[vp.line].push(CellData {
+                col: point.column.0,
+                c: cell.c,
+                fg: fg_rgb,
+                bg: bg_rgb,
+                flags,
+                selected,
+                link: cell.hyperlink().is_some(),
+            });
         }
     }
 
-    shapes
+    let sel_color = {
+        let s = theme.selection;
+        Color32::from_rgba_unmultiplied(s[0], s[1], s[2], 170)
+    };
+    for (row, cells) in per_row.iter().enumerate() {
+        let mut h = std::collections::hash_map::DefaultHasher::new();
+        for c in cells {
+            (c.col, c.c, c.fg, c.bg, c.flags.bits(), c.selected, c.link).hash(&mut h);
+        }
+        let hash = h.finish();
+        if pane.row_cache[row].0 == hash {
+            continue;
+        }
+        let mut shapes = Vec::with_capacity(cells.len() * 2);
+        let y = area.top() + row as f32 * metrics.cell_h;
+        for c in cells {
+            let wide = c.flags.contains(Flags::WIDE_CHAR);
+            let x = area.left() + c.col as f32 * metrics.cell_w;
+            let w = metrics.cell_w * if wide { 2.0 } else { 1.0 };
+            let cell_rect = Rect::from_min_size(Pos2::new(x, y), egui::vec2(w, metrics.cell_h));
+            if let Some(bg) = c.bg {
+                shapes.push(Shape::rect_filled(cell_rect, 0.0, rgb(bg)));
+            }
+            if c.selected {
+                shapes.push(Shape::rect_filled(cell_rect, 0.0, sel_color));
+            }
+            if c.c != ' ' && c.c != '\0' && !c.flags.contains(Flags::HIDDEN) {
+                let galley = cache.get(ctx, c.c, style_of(c.flags), config.font_size);
+                let color = rgb(c.fg);
+                let gy = y + ((metrics.cell_h - galley.size().y) * 0.5).max(0.0);
+                shapes.push(Shape::galley(Pos2::new(x, gy), galley, color));
+                if c.flags.intersects(Flags::ALL_UNDERLINES) || c.link {
+                    let a = if c.link && !c.flags.intersects(Flags::ALL_UNDERLINES) { 0.5 } else { 1.0 };
+                    shapes.push(Shape::rect_filled(
+                        Rect::from_min_size(Pos2::new(x, y + metrics.cell_h - 2.0), egui::vec2(w, 1.0)),
+                        0.0,
+                        color.gamma_multiply(a),
+                    ));
+                }
+                if c.flags.contains(Flags::STRIKEOUT) {
+                    shapes.push(Shape::rect_filled(
+                        Rect::from_min_size(Pos2::new(x, y + metrics.cell_h * 0.5), egui::vec2(w, 1.5)),
+                        0.0,
+                        color,
+                    ));
+                }
+            }
+        }
+        pane.row_cache[row] = (hash, shapes);
+    }
+    pane.cached = pane.row_cache.iter().flat_map(|(_, s)| s.iter().cloned()).collect();
 }
 
 /// Curseur dessiné par-dessus : forme pilotée par la config, déplacement fluide
@@ -228,6 +269,7 @@ pub fn draw_cursor(
     metrics: FontMetrics,
     focused: bool,
     time: f64,
+    blinking: bool,
 ) {
     use std::f64::consts::PI;
 
@@ -305,7 +347,7 @@ pub fn draw_cursor(
 
     let mut alpha = 1.0_f32;
     let mut scale_y = 1.0_f32;
-    if config.cursor_blink {
+    if blinking {
         match config.cursor_blink_style {
             BlinkStyle::Blink => {
                 if ((time * 2.0) as i64) % 2 != 0 {

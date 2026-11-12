@@ -125,3 +125,177 @@ pub fn by_name(name: &str) -> Theme {
         .find(|t| t.name == name)
         .unwrap_or_else(|| presets().into_iter().next().unwrap())
 }
+/// Couleur « #rrggbb », « rrggbb », « 0xrrggbb » ou « #rgb ».
+pub fn parse_hex(s: &str) -> Option<Rgb> {
+    let h = s.trim().trim_matches(|c| c == '\'' || c == '"').trim_start_matches('#').trim_start_matches("0x");
+    let h = h.get(..6).filter(|_| h.len() >= 6).map(str::to_string).or_else(|| {
+        (h.len() == 3).then(|| h.chars().flat_map(|c| [c, c]).collect())
+    })?;
+    let v = u32::from_str_radix(&h, 16).ok()?;
+    Some([(v >> 16) as u8, (v >> 8) as u8, v as u8])
+}
+
+const ANSI_NAMES: [&str; 8] = ["black", "red", "green", "yellow", "blue", "magenta", "cyan", "white"];
+
+fn finish(name: String, fg: Option<Rgb>, bg: Option<Rgb>, cur: Option<Rgb>, sel: Option<Rgb>, ansi: [Option<Rgb>; 16]) -> Result<Theme, String> {
+    let base = by_name("Nova Dark");
+    let found = ansi.iter().filter(|c| c.is_some()).count();
+    if fg.is_none() && bg.is_none() && found < 8 {
+        return Err("aucune couleur reconnue dans ce fichier".into());
+    }
+    let mut out = [[0u8; 3]; 16];
+    for i in 0..16 {
+        out[i] = ansi[i].or(ansi[i % 8]).unwrap_or(base.ansi[i]);
+    }
+    let fg = fg.unwrap_or(out[7]);
+    let bg = bg.unwrap_or(out[0]);
+    Ok(Theme { name, foreground: fg, background: bg, cursor: cur.unwrap_or(fg), selection: sel.unwrap_or(out[8]), ansi: out })
+}
+
+/// Importe un thème : iTerm2 (.itermcolors), Alacritty (.toml/.yml), Kitty (.conf),
+/// Windows Terminal (.json), Xresources.
+pub fn import_file(path: &std::path::Path) -> Result<Theme, String> {
+    let text = std::fs::read_to_string(path).map_err(|e| format!("lecture impossible : {e}"))?;
+    let name = path.file_stem().and_then(|s| s.to_str()).unwrap_or("Importé").replace(['_', '-'], " ");
+    let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("").to_ascii_lowercase();
+    let (mut fg, mut bg, mut cur, mut sel) = (None, None, None, None);
+    let mut ansi: [Option<Rgb>; 16] = [None; 16];
+
+    if ext == "itermcolors" || text.contains("<plist") {
+        // <key>Ansi 0 Color</key><dict>… Red Component … <real>0.5</real> …</dict>
+        let mut rest = text.as_str();
+        while let Some(k) = rest.find("<key>") {
+            rest = &rest[k + 5..];
+            let Some(e) = rest.find("</key>") else { break };
+            let key = rest[..e].to_string();
+            let Some(dict_end) = rest.find("</dict>") else { break };
+            let dict = &rest[e..dict_end];
+            let comp = |n: &str| -> Option<u8> {
+                let p = dict.find(&format!("<key>{n} Component</key>"))?;
+                let r = &dict[p..];
+                let s = r.find("<real>")? + 6;
+                let v: f32 = r[s..s + r[s..].find("</real>")?].trim().parse().ok()?;
+                Some((v.clamp(0.0, 1.0) * 255.0).round() as u8)
+            };
+            if let (Some(r), Some(g), Some(b)) = (comp("Red"), comp("Green"), comp("Blue")) {
+                let c = Some([r, g, b]);
+                match key.as_str() {
+                    "Foreground Color" => fg = c,
+                    "Background Color" => bg = c,
+                    "Cursor Color" => cur = c,
+                    "Selection Color" => sel = c,
+                    k => {
+                        if let Some(n) = k.strip_prefix("Ansi ").and_then(|s| s.strip_suffix(" Color")).and_then(|n| n.parse::<usize>().ok()) {
+                            if n < 16 {
+                                ansi[n] = c;
+                            }
+                        }
+                    }
+                }
+                rest = &rest[dict_end..];
+            }
+        }
+    } else if ext == "json" || text.trim_start().starts_with('{') {
+        let get = |k: &str| -> Option<Rgb> {
+            let p = text.find(&format!("\"{k}\""))?;
+            let r = &text[p + k.len() + 2..];
+            let q = r.find('"')? + 1;
+            parse_hex(&r[q..q + r[q..].find('"')?])
+        };
+        fg = get("foreground");
+        bg = get("background");
+        cur = get("cursorColor");
+        sel = get("selectionBackground");
+        for (i, n) in ANSI_NAMES.iter().enumerate() {
+            ansi[i] = get(n).or_else(|| if *n == "magenta" { get("purple") } else { None });
+            let bright = format!("bright{}{}", n[..1].to_uppercase(), &n[1..]);
+            ansi[i + 8] = get(&bright).or_else(|| if *n == "magenta" { get("brightPurple") } else { None });
+        }
+    } else {
+        // Alacritty (toml / yaml), Kitty, Xresources : analyse ligne par ligne.
+        let mut section = String::new();
+        for raw in text.lines() {
+            let line = raw.trim();
+            if line.is_empty() || line.starts_with('#') || line.starts_with('!') {
+                continue;
+            }
+            if line.starts_with('[') {
+                section = line.trim_matches(['[', ']']).to_ascii_lowercase();
+                continue;
+            }
+            let (k, v) = match line.split_once(['=', ':']) {
+                Some((k, v)) if !k.contains(' ') || line.contains('=') => (k.trim(), v.trim()),
+                _ => match line.split_once(char::is_whitespace) {
+                    Some((k, v)) => (k.trim(), v.trim()),
+                    None => continue,
+                },
+            };
+            let key = k.trim_start_matches("*.").trim_start_matches('*').to_ascii_lowercase();
+            if v.is_empty() {
+                // Section YAML (« primary: », « normal: »…).
+                section = key.clone();
+                continue;
+            }
+            let Some(c) = parse_hex(v) else { continue };
+            let in_sec = |s: &str| section.ends_with(s);
+            match key.as_str() {
+                "foreground" if !in_sec("cursor") && !in_sec("selection") => fg = Some(c),
+                "background" if in_sec("selection") => sel = Some(c),
+                "background" if !in_sec("cursor") => bg = Some(c),
+                "cursor" | "cursorcolor" => cur = Some(c),
+                "selection_background" => sel = Some(c),
+                _ => {
+                    if let Some(n) = key.strip_prefix("color").and_then(|n| n.parse::<usize>().ok()) {
+                        if n < 16 {
+                            ansi[n] = Some(c);
+                        }
+                    } else if let Some(i) = ANSI_NAMES.iter().position(|a| *a == key) {
+                        let idx = if in_sec("bright") { i + 8 } else { i };
+                        ansi[idx] = Some(c);
+                    }
+                }
+            }
+        }
+    }
+    finish(name, fg, bg, cur, sel, ansi)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn tmp(name: &str, content: &str) -> std::path::PathBuf {
+        let p = std::env::temp_dir().join(format!("novaterm-theme-{}-{name}", std::process::id()));
+        std::fs::write(&p, content).unwrap();
+        p
+    }
+
+    #[test]
+    fn hex() {
+        assert_eq!(parse_hex("#1a2b3c"), Some([0x1a, 0x2b, 0x3c]));
+        assert_eq!(parse_hex("'0xffffff'"), Some([255, 255, 255]));
+        assert_eq!(parse_hex("#fff"), Some([255, 255, 255]));
+    }
+
+    #[test]
+    fn import_formats() {
+        let alacritty = tmp("a.toml", "[colors.primary]\nbackground = '#101010'\nforeground = '#e0e0e0'\n[colors.normal]\nblack='#000000'\nred='#ff0000'\ngreen='#00ff00'\nyellow='#ffff00'\nblue='#0000ff'\nmagenta='#ff00ff'\ncyan='#00ffff'\nwhite='#ffffff'\n[colors.bright]\nred='#ff8080'\n");
+        let t = import_file(&alacritty).unwrap();
+        assert_eq!(t.background, [0x10, 0x10, 0x10]);
+        assert_eq!(t.ansi[1], [255, 0, 0]);
+        assert_eq!(t.ansi[9], [0xff, 0x80, 0x80]);
+        let kitty = tmp("k.conf", "foreground #dddddd\nbackground #222222\ncolor1 #aa0000\ncolor9 #ff5555\nselection_background #444444\n");
+        let t = import_file(&kitty).unwrap();
+        assert_eq!((t.foreground, t.ansi[1], t.selection), ([0xdd; 3], [0xaa, 0, 0], [0x44; 3]));
+        let wt = tmp("w.json", r##"{"name":"X","background":"#0C0C0C","foreground":"#CCCCCC","red":"#C50F1F","brightRed":"#E74856","purple":"#881798"}"##);
+        let t = import_file(&wt).unwrap();
+        assert_eq!((t.ansi[1], t.ansi[9], t.ansi[5]), ([0xc5, 0x0f, 0x1f], [0xe7, 0x48, 0x56], [0x88, 0x17, 0x98]));
+        let iterm = tmp("i.itermcolors", "<plist><dict><key>Ansi 1 Color</key><dict><key>Blue Component</key><real>0</real><key>Green Component</key><real>0</real><key>Red Component</key><real>1</real></dict><key>Background Color</key><dict><key>Blue Component</key><real>0.1</real><key>Green Component</key><real>0.1</real><key>Red Component</key><real>0.1</real></dict></dict></plist>");
+        let t = import_file(&iterm).unwrap();
+        assert_eq!((t.ansi[1], t.background), ([255, 0, 0], [26, 26, 26]));
+        assert!(import_file(&tmp("e.txt", "hello")).is_err());
+        for p in [alacritty, kitty, wt, iterm] {
+            let _ = std::fs::remove_file(p);
+        }
+    }
+}
