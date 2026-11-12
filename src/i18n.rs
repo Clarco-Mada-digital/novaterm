@@ -29,8 +29,13 @@ impl Language {
 
 static ENGLISH: AtomicBool = AtomicBool::new(false);
 
-/// La langue du système est-elle le français ?
+/// La langue du système est-elle le français ? (lue une seule fois)
 fn system_is_french() -> bool {
+    static FR: OnceLock<bool> = OnceLock::new();
+    *FR.get_or_init(detect_french)
+}
+
+fn detect_french() -> bool {
     for var in ["LC_ALL", "LC_MESSAGES", "LANG", "LANGUAGE"] {
         if let Ok(v) = std::env::var(var) {
             if !v.is_empty() {
@@ -41,8 +46,12 @@ fn system_is_french() -> bool {
     // Windows / macOS : pas de variable LANG en général.
     #[cfg(windows)]
     {
-        if let Ok(out) = std::process::Command::new("powershell").args(["-NoProfile", "-Command", "(Get-Culture).Name"]).output() {
-            return String::from_utf8_lossy(&out.stdout).to_ascii_lowercase().starts_with("fr");
+        // Ex. « fr-FR » : appel direct à Windows, aucune fenêtre ouverte.
+        let mut buf = [0u16; 85];
+        // SAFETY : tampon de LOCALE_NAME_MAX_LENGTH (85) caractères, taille passée.
+        let n = unsafe { windows_sys::Win32::Globalization::GetUserDefaultLocaleName(buf.as_mut_ptr(), buf.len() as i32) };
+        if n > 0 {
+            return String::from_utf16_lossy(&buf[..(n as usize).saturating_sub(1)]).to_ascii_lowercase().starts_with("fr");
         }
     }
     #[cfg(target_os = "macos")]

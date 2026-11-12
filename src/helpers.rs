@@ -279,7 +279,7 @@ pub struct Explanation {
 }
 
 fn run(prog: &str, args: &[&str]) -> Option<String> {
-    let out = Command::new(prog).args(args).env("MANWIDTH", "120").env("MANPAGER", "cat").env("PAGER", "cat").output().ok()?;
+    let out = crate::platform::hidden_command(prog).args(args).env("MANWIDTH", "120").env("MANPAGER", "cat").env("PAGER", "cat").output().ok()?;
     if !out.status.success() && out.stdout.is_empty() {
         return None;
     }

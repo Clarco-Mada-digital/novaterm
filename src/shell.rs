@@ -113,6 +113,20 @@ pub struct Launch {
 }
 
 /// Prépare l'intégration pour ce shell (vide si non pris en charge).
+/// Touches qui vident la ligne en cours avant d'y insérer une commande.
+/// Ctrl+E (fin de ligne) puis Ctrl+U (effacer) : compris par readline, zle, fish,
+/// reedline… mais PowerShell et cmd les affichent tels quels (« ^E^U »). Pour un
+/// shell inconnu, on n'envoie rien : mieux vaut ajouter à la ligne que la casser.
+pub fn line_clear_keys(shell_path: &str) -> &'static [u8] {
+    // Nom du programme, quel que soit le séparateur (/ ou \\), sans « .exe ».
+    let file = shell_path.trim().rsplit(['/', '\\']).next().unwrap_or("").to_ascii_lowercase();
+    let name = file.strip_suffix(".exe").unwrap_or(&file);
+    match name {
+        "bash" | "zsh" | "fish" | "sh" | "dash" | "ksh" | "mksh" | "yash" | "nu" | "elvish" | "xonsh" | "wsl" | "ubuntu" | "debian" => b"\x05\x15",
+        _ => b"",
+    }
+}
+
 pub fn launch_for(shell_path: &str) -> Launch {
     let name = std::path::Path::new(shell_path)
         .file_stem()
@@ -195,6 +209,16 @@ pub fn parse_osc7(payload: &str) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn clear_keys_per_shell() {
+        assert_eq!(line_clear_keys("/bin/zsh"), b"\x05\x15");
+        assert_eq!(line_clear_keys("/usr/bin/bash"), b"\x05\x15");
+        assert_eq!(line_clear_keys("C:\\Windows\\System32\\wsl.exe"), b"\x05\x15");
+        assert!(line_clear_keys("pwsh.exe").is_empty());
+        assert!(line_clear_keys("powershell.exe").is_empty());
+        assert!(line_clear_keys("cmd.exe").is_empty());
+    }
 
     #[test]
     fn parse_messages() {

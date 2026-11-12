@@ -55,11 +55,31 @@ fn style_of(flags: Flags) -> u8 {
 pub struct FontCache {
     map: HashMap<(char, u8), Arc<Galley>>,
     size: f32,
+    /// Atlas de glyphes d'egui auquel renvoient les galleys en cache.
+    atlas: usize,
+}
+
+/// Identifiant de l'atlas de glyphes courant. egui le recrée quand l'échelle change
+/// (fenêtre déplacée sur un écran d'une autre résolution) ou quand il est plein :
+/// les galleys construites avant pointent alors vers une texture qui n'existe plus
+/// (texte invisible). Il faut donc tout reconstruire.
+pub fn atlas_generation(ctx: &egui::Context) -> usize {
+    ctx.fonts(|f| Arc::as_ptr(&f.texture_atlas()) as *const () as usize)
 }
 
 impl FontCache {
     pub fn new() -> Self {
-        Self { map: HashMap::new(), size: 0.0 }
+        Self { map: HashMap::new(), size: 0.0, atlas: 0 }
+    }
+
+    /// Vide le cache si l'atlas a changé. Retourne true dans ce cas.
+    pub fn sync_atlas(&mut self, atlas: usize) -> bool {
+        if self.atlas == atlas {
+            return false;
+        }
+        self.atlas = atlas;
+        self.map.clear();
+        true
     }
 
     /// À appeler après un changement de famille de police.

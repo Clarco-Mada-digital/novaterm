@@ -315,6 +315,8 @@ enum DemoStep {
     Type(String),
     Key(KeyCombo),
     Shot(PathBuf),
+    /// Change l'échelle d'egui (simule un écran d'une autre résolution).
+    Zoom(f32),
     Quit,
 }
 
@@ -334,6 +336,7 @@ impl Demo {
             let (cmd, arg) = line.split_once(' ').unwrap_or((line, ""));
             let step = match cmd {
                 "wait" => DemoStep::Wait(arg.trim().parse().unwrap_or(0.5)),
+                "zoom" => DemoStep::Zoom(arg.trim().parse().unwrap_or(1.0)),
                 "type" => DemoStep::Type(arg.to_string()),
                 "enter" => DemoStep::Key(KeyCombo::new(false, false, false, Key::Enter)),
                 "key" => match KeyCombo::parse(arg) {
@@ -1988,8 +1991,9 @@ impl NovaApp {
     fn insert_command(&mut self, id: u64, cmd: &str, exec: bool) {
         self.set_focus(id);
         if let Some(pane) = self.panes.get_mut(&id) {
-            // Ctrl+E (fin de ligne) puis Ctrl+U (effacer la ligne) : zsh, bash, fish.
-            let mut bytes = b"\x05\x15".to_vec();
+            // Vider la ligne d'abord, si le shell le permet (pas PowerShell ni cmd).
+            let already_empty = pane.cmdline.as_ref().is_some_and(|(_, b)| b.is_empty());
+            let mut bytes = if already_empty { Vec::new() } else { pane.line_clear.to_vec() };
             bytes.extend_from_slice(cmd.as_bytes());
             if exec {
                 bytes.push(b'\r');
@@ -3472,10 +3476,14 @@ impl NovaApp {
                 self.applied_font.hash(&mut h);
                 h.finish()
             };
+            // Atlas de glyphes recréé (autre écran, autre échelle…) : tout reconstruire.
+            let atlas = render::atlas_generation(ctx);
+            self.font_cache.sync_atlas(atlas);
+            let ppp = ctx.pixels_per_point().to_bits();
             let render_key = |r: Rect| -> u64 {
                 use std::hash::{Hash, Hasher};
                 let mut h = std::collections::hash_map::DefaultHasher::new();
-                (r.min.x.to_bits(), r.min.y.to_bits(), r.max.x.to_bits(), r.max.y.to_bits(), geo, theme_hash).hash(&mut h);
+                (r.min.x.to_bits(), r.min.y.to_bits(), r.max.x.to_bits(), r.max.y.to_bits(), geo, theme_hash, atlas, ppp).hash(&mut h);
                 h.finish()
             };
 
@@ -4116,6 +4124,10 @@ impl NovaApp {
                 }
                 demo.resume_at = time + 0.15;
             }
+            DemoStep::Zoom(z) => {
+                ctx.set_zoom_factor(z);
+                demo.resume_at = time + 0.3;
+            }
             DemoStep::Shot(p) => {
                 demo.pending_shot = Some(p);
                 ctx.send_viewport_cmd(egui::ViewportCommand::Screenshot(egui::UserData::default()));
@@ -4275,12 +4287,19 @@ impl NovaApp {
 
 /// Heure locale (0–23), sans dépendance de fuseau horaire.
 fn local_hour() -> u32 {
-    let out = if cfg!(windows) {
-        std::process::Command::new("powershell").args(["-NoProfile", "-Command", "(Get-Date).Hour"]).output()
-    } else {
-        std::process::Command::new("date").arg("+%H").output()
-    };
-    out.ok()
+    #[cfg(windows)]
+    {
+        // Appel direct à Windows (PowerShell ouvrait une fenêtre à chaque fois).
+        let mut st: windows_sys::Win32::Foundation::SYSTEMTIME = unsafe { std::mem::zeroed() };
+        // SAFETY : écrit dans une structure SYSTEMTIME valide.
+        unsafe { windows_sys::Win32::System::SystemInformation::GetLocalTime(&mut st) };
+        u32::from(st.wHour).min(23)
+    }
+    #[cfg(not(windows))]
+    std::process::Command::new("date")
+        .arg("+%H")
+        .output()
+        .ok()
         .and_then(|o| String::from_utf8_lossy(&o.stdout).trim().parse().ok())
         .unwrap_or(12)
 }

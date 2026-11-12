@@ -135,6 +135,8 @@ pub struct Pane {
     pub cmdline: Option<(usize, String)>,
     /// L'intégration shell a répondu au moins une fois.
     pub integration: bool,
+    /// Touches pour vider la ligne avant d'insérer une commande (selon le shell).
+    pub line_clear: &'static [u8],
     /// Un autre plugin de suggestions est actif dans ce shell.
     pub suggest_conflict: bool,
     /// Commandes exécutées depuis le dernier passage (pour l'historique).
@@ -266,6 +268,7 @@ impl Pane {
             filter: SeqFilter::default(),
             cmdline: None,
             integration: false,
+            line_clear: shell::line_clear_keys(&shell_path),
             suggest_conflict: false,
             executed: Vec::new(),
             cwd_reported: None,

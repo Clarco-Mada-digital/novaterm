@@ -30,5 +30,9 @@ lto = "fat"
 codegen-units = 1
 panic = "abort"
 strip = true
+[target.'cfg(windows)'.dependencies]
+# Langue et heure lues directement (sans lancer PowerShell, qui ouvrait des fenêtres).
+windows-sys = { version = "0.59", features = ["Win32_Foundation", "Win32_Globalization", "Win32_System_SystemInformation"] }
+
 [target.'cfg(windows)'.build-dependencies]
 winresource = "0.1"

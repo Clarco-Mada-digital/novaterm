@@ -79,7 +79,7 @@ pub fn shell_presets() -> Vec<(String, String)> {
 /// Ouvre un lien, un fichier ou un dossier avec l'application par défaut.
 pub fn open(target: &str) {
     let result = if cfg!(windows) {
-        Command::new("cmd").args(["/C", "start", "", target]).spawn()
+        hidden_command("cmd").args(["/C", "start", "", target]).spawn()
     } else if cfg!(target_os = "macos") {
         Command::new("open").arg(target).spawn()
     } else {
@@ -178,8 +178,11 @@ pub fn play_sound() {
     }
 }
 
+/// Programme lancé en arrière-plan. Sous Windows, NovaTerm est une application
+/// fenêtrée : sans CREATE_NO_WINDOW, chaque programme console (git, powershell…)
+/// ouvrirait une fenêtre noire le temps de son exécution.
 #[cfg(windows)]
-fn hidden_command(program: &str) -> Command {
+pub fn hidden_command(program: &str) -> Command {
     use std::os::windows::process::CommandExt;
     let mut c = Command::new(program);
     c.creation_flags(0x0800_0000); // CREATE_NO_WINDOW
@@ -187,7 +190,7 @@ fn hidden_command(program: &str) -> Command {
 }
 
 #[cfg(not(windows))]
-fn hidden_command(program: &str) -> Command {
+pub fn hidden_command(program: &str) -> Command {
     Command::new(program)
 }
 

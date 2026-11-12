@@ -3,7 +3,6 @@
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
-use std::process::Command;
 use std::time::{Duration, Instant};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -353,7 +352,7 @@ impl Completer {
 }
 
 fn run_in(cwd: &Path, prog: &str, args: &[&str]) -> Option<String> {
-    let out = Command::new(prog).args(args).current_dir(cwd).output().ok()?;
+    let out = crate::platform::hidden_command(prog).args(args).current_dir(cwd).output().ok()?;
     out.status.success().then(|| String::from_utf8_lossy(&out.stdout).into_owned())
 }
 
