@@ -62,6 +62,7 @@ fn arg_value(args: &[String], name: &str) -> Option<String> {
 }
 
 fn main() -> eframe::Result<()> {
+    appimage::take_runtime_env();
     let args: Vec<String> = std::env::args().collect();
     let has = |n: &str| args.iter().any(|a| a == n);
     if has("--help") || has("-h") {

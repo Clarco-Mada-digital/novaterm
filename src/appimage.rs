@@ -3,13 +3,42 @@
 //! et sait retirer cette intégration.
 
 use std::path::{Path, PathBuf};
+use std::sync::OnceLock;
 
-/// Chemin de l'AppImage en cours d'exécution (variable posée par le runtime AppImage).
-pub fn current() -> Option<PathBuf> {
+/// Variables posées par le runtime AppImage. Elles ne doivent pas atteindre le shell
+/// ni les programmes lancés : `ARGV0`, par exemple, fait croire à rustup qu'il
+/// s'appelle « NovaTerm-x.y.z-x86_64 » (« unknown proxy name »).
+const RUNTIME_VARS: [&str; 4] = ["APPIMAGE", "APPDIR", "ARGV0", "OWD"];
+
+static APPIMAGE_PATH: OnceLock<Option<PathBuf>> = OnceLock::new();
+
+/// AppImage en cours d'exécution d'après l'environnement : seulement si notre
+/// exécutable est bien dans son dossier monté (pas l'AppImage d'un autre
+/// programme dont on aurait hérité les variables).
+fn detect() -> Option<PathBuf> {
     if !cfg!(target_os = "linux") {
         return None;
     }
-    std::env::var_os("APPIMAGE").map(PathBuf::from).filter(|p| p.is_file())
+    let app = std::env::var_os("APPIMAGE").map(PathBuf::from).filter(|p| p.is_file())?;
+    let dir = std::env::var_os("APPDIR").map(PathBuf::from)?;
+    let exe = std::env::current_exe().ok()?;
+    exe.starts_with(&dir).then_some(app)
+}
+
+/// À appeler au tout début de `main`, avant tout autre fil d'exécution : mémorise
+/// l'AppImage puis retire les variables du runtime de l'environnement.
+pub fn take_runtime_env() {
+    let _ = APPIMAGE_PATH.set(detect());
+    if RUNTIME_VARS[..2].iter().any(|v| std::env::var_os(v).is_some()) {
+        for v in RUNTIME_VARS {
+            std::env::remove_var(v);
+        }
+    }
+}
+
+/// Chemin de l'AppImage en cours d'exécution.
+pub fn current() -> Option<PathBuf> {
+    APPIMAGE_PATH.get_or_init(detect).clone().filter(|p| p.is_file())
 }
 
 /// Chemin durable de l'exécutable : l'AppImage elle-même si on tourne depuis une
