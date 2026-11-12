@@ -12,6 +12,7 @@ mod fonts;
 mod guard;
 mod helpers;
 mod history;
+mod i18n;
 mod icon;
 mod images;
 mod input;
@@ -185,6 +186,7 @@ fn main() -> eframe::Result<()> {
     let crashed = guard::previous_crash();
     let safe_reason = if has("--safe-mode") { Some("manual".to_string()) } else { crashed };
     let (mut config, config_warning) = config::Config::load_checked();
+    i18n::set(config.language);
     if safe_reason.is_some() && !config.font_family.is_empty() {
         config.font_family.clear();
         config.save();

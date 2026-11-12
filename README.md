@@ -75,6 +75,17 @@ Une touche (<kbd>F12</kbd>) fait descendre un terminal du haut de l'écran.
 <kbd>Ctrl</kbd>+<kbd>Maj</kbd>+<kbd>P</kbd> : toutes les actions, vos snippets,
 vos profils et les thèmes, en tapant quelques lettres.
 
+**💡 Aides intelligentes, sans IA**
+Fautes de frappe corrigées (`gti` → `git`), astuces sur les erreurs courantes
+(port occupé, module manquant…), et « Expliquer la commande » hors ligne
+(<kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>X</kbd>, pages man et tldr).
+
+**🔄 Mises à jour automatiques**
+Nouvelle version signalée dans un bandeau ; l'AppImage se met à jour en un clic.
+
+**🌍 Français / English**
+Interface en français ou en anglais (automatique selon le système).
+
 **🎨 Personnalisable**
 Onglets, splits, thèmes (+ import iTerm2 / Alacritty / Kitty / Windows Terminal),
 transparence, polices, curseur animé, raccourcis entièrement modifiables.
@@ -185,6 +196,7 @@ L'intégration shell ne modifie jamais `~/.zshrc` ni `~/.bashrc` : rien à y net
 | <kbd>→</kbd> | Accepter la suggestion |
 | <kbd>Ctrl</kbd>+<kbd>↑</kbd> / <kbd>↓</kbd> | Commande précédente / suivante |
 | <kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>H</kbd> | Rechercher dans l'historique |
+| <kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>F</kbd> / <kbd>X</kbd> | Corriger / expliquer la commande |
 | <kbd>Ctrl</kbd>+<kbd>Maj</kbd>+<kbd>C</kbd> / <kbd>V</kbd> | Copier / coller |
 | <kbd>Ctrl</kbd>+<kbd>C</kbd> | Interrompre le programme (toujours transmis) |
 
@@ -261,6 +273,9 @@ novaterm --profile NOM        ouvrir un profil de projet
 novaterm --cwd DOSSIER        ouvrir un onglet dans ce dossier
 novaterm --quake              terminal rapide ; --toggle l'affiche / le masque
 novaterm --imgcat image.svg   afficher une image (--width 40 | 50% | 300px)
+novaterm --explain "tar -xzf a.tar.gz"   expliquer une commande (hors ligne)
+novaterm --check-update       vérifier si une nouvelle version existe
+novaterm --quake-shortcut F12 créer le raccourci du terminal rapide (--quake-shortcut-remove)
 novaterm --integrate          AppImage : ranger dans ~/Applications et ajouter au menu
 novaterm --unintegrate        AppImage : retirer du menu
 novaterm --safe-mode          démarrer avec la police intégrée

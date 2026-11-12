@@ -1,0 +1,613 @@
+# Traduction anglaise de l'interface : français<TAB>anglais (« \n » = retour à la ligne).
+Apparence	Appearance
+Police	Font
+Fenêtre	Window
+Curseur	Cursor
+Terminal	Terminal
+Souris	Mouse
+Suggestions	Suggestions
+Aides	Helpers
+Blocs & alertes	Blocks & alerts
+Liens & éditeur	Links & editor
+Images	Images
+Session & profils	Session & profiles
+Terminal rapide	Quick terminal
+Snippets	Snippets
+Raccourcis	Shortcuts
+Avancé	Advanced
+Thème, couleurs, transparence et image de fond.	Theme, colors, transparency and background image.
+Police, taille et espacements du texte.	Font, size and text spacing.
+Taille, barres, décorations et comportement de la fenêtre.	Size, bars, decorations and window behavior.
+Forme et animation du curseur.	Cursor shape and animation.
+Shell, historique, clavier et sélection.	Shell, history, keyboard and selection.
+Focus, presse-papiers, défilement et souris dans les programmes.	Focus, clipboard, scrolling and mouse in programs.
+Suite de commande proposée pendant la frappe et complétion intelligente.	Command completion suggested as you type, and smart completion.
+Corrections et explications 100 % locales, sans IA.	Fixes and explanations, 100% local, no AI.
+Chaque commande devient un bloc avec son statut ; alertes de fin de tâche.	Each command becomes a block with its status; task completion alerts.
+URL, fichiers et erreurs cliquables, et l'éditeur qui les ouvre.	Clickable URLs, files and errors, and the editor that opens them.
+Afficher des images directement dans le terminal.	Display images right in the terminal.
+Retrouver ses onglets au démarrage et ouvrir des espaces de travail tout prêts.	Get your tabs back at startup and open ready-made workspaces.
+Un terminal qui descend du haut de l'écran avec une seule touche.	A terminal that drops down from the top of the screen with one key.
+Vos commandes favorites, accessibles depuis la palette.	Your favorite commands, available from the palette.
+Toutes les actions et leurs raccourcis, modifiables.	Every action and its shortcuts, all customizable.
+Dépannage et informations.	Troubleshooting and information.
+thème couleur theme transparence opacité image fond clair sombre auto importer iterm alacritty kitty animation notification toast	theme color colour transparency opacity background image light dark auto import iterm alacritty kitty animation notification toast language langue thème couleur
+police font taille interligne espacement lettre marge nerd fira jetbrains	font size line spacing letter margin padding nerd fira jetbrains police taille
+fenêtre taille démarrage agrandie plein écran premier plan barre onglets statut décoration titre coins arrondis fermeture confirmer	window size startup maximized fullscreen always on top bar tabs status decoration title rounded corners close confirm fenêtre
+curseur bloc barre souligné clignotement fondu pulsation animation traînée batterie	cursor block beam underline blink fade pulse animation trail battery curseur
+shell zsh bash powershell cmd wsl dossier historique scrollback clavier ctrl+c ctrl+v coller sélection mots diffusion broadcast cloche bell	shell zsh bash powershell cmd wsl folder directory history scrollback keyboard ctrl+c ctrl+v paste selection words broadcast bell security clipboard osc52
+souris focus suit copier sélection clic milieu droit molette défilement zoom lien htop vim	mouse focus follows copy selection click middle right wheel scroll zoom link htop vim souris
+suggestion autosuggestion historique complétion completion git docker npm intégration shell zsh	suggestion autosuggestion history completion git docker npm shell integration zsh
+aide astuce erreur faute frappe typo corriger expliquer man tldr	help tip error typo fix correct explain man tldr aide astuce
+bloc commande statut durée badge notification alerte son fin tâche onglet pastille	block command status duration badge notification alert sound task finished tab dot bloc
+lien url fichier chemin erreur éditeur vscode code vim nano ctrl+clic	link url file path error editor vscode code vim nano ctrl+click lien
+image imgcat kitty iterm photo svg png	image imgcat kitty iterm photo picture svg png
+session restaurer démarrage profil projet espace de travail sauvegarde	session restore startup profile project workspace save backup
+quake rapide déroulant f12 raccourci global toggle	quake quick dropdown drop-down f12 global shortcut hotkey toggle
+snippet favori commande palette	snippet favorite command palette
+raccourci clavier touche keybinding	shortcut keyboard key keybinding hotkey raccourci
+dépannage police réinitialiser config version	troubleshooting font reset config version update appimage
+Paramètres	Settings
+Aucun réglage trouvé	No setting found
+⌨ Aide des raccourcis	⌨ Shortcut help
+📄 Ouvrir config.toml	📄 Open config.toml
+Annuler	Cancel
+Confirmer : tout réinitialiser	Confirm: reset everything
+Tout réinitialiser…	Reset everything…
+✔ Enregistré automatiquement	✔ Saved automatically
+Thème	Theme
+Importer…	Import…
+Supprimer	Delete
+Clair / sombre automatique	Automatic light / dark
+Jour à partir de	Day starts at
+nuit à partir de	night starts at
+Personnaliser les couleurs…	Customize colors…
+Revenir au thème prédéfini	Back to the preset theme
+Transparence	Transparency
+Nécessite un compositeur (activé par défaut sur Cinnamon).	Requires a compositor (enabled by default on Cinnamon).
+Image de fond	Background image
+Parcourir…	Browse…
+Retirer	Remove
+Animations	Animations
+Notifications animées (copie, split, thème…)	Animated notifications (copy, split, theme…)
+Famille	Family
+Choisir une police du système…	Choose a system font…
+Recherche les polices à chasse fixe installées (fontconfig).	Looks for installed monospace fonts (fontconfig).
+Filtrer	Filter
+Taille	Size
+Par défaut	Default
+Raccourcis : Ctrl+Maj++ / Ctrl+Maj+- / Ctrl+0, ou Ctrl+molette.	Shortcuts: Ctrl+Shift++ / Ctrl+Shift+- / Ctrl+0, or Ctrl+wheel.
+Espacement	Spacing
+Aperçu	Preview
+Taille au démarrage	Size at startup
+Largeur	Width
+Hauteur	Height
+Utiliser la taille actuelle	Use current size
+Mémoriser la taille à la fermeture	Remember size on close
+Démarrer agrandie	Start maximized
+Démarrer en plein écran	Start fullscreen
+Toujours au premier plan	Always on top
+Barres	Bars
+Barre d'onglets	Tab bar
+Barre de statut	Status bar
+Décorations	Decorations
+Décorations personnalisées	Custom decorations
+Barre de titre, boutons et coins arrondis dessinés par NovaTerm (sinon ceux du système).	Title bar, buttons and rounded corners drawn by NovaTerm (otherwise the system's).
+Titre	Title
+Fermeture	Closing
+Confirmer si un programme tourne encore (serveur, éditeur…)	Confirm if a program is still running (server, editor…)
+Forme	Shape
+Laisser les applications changer la forme (vim…)	Let applications change the shape (vim…)
+Animation	Animation
+Animer le curseur	Animate the cursor
+Déplacement fluide (traînée)	Smooth movement (trail)
+Économise la batterie : sans animation, NovaTerm ne consomme rien au repos.	Saves battery: without animation, NovaTerm uses nothing when idle.
+Shell	Shell
+Programme	Program
+Par défaut du système	System default
+Vide = shell par défaut. S'applique aux nouveaux panneaux.	Empty = default shell. Applies to new panes.
+Dossier de départ	Starting folder
+Fermer le panneau quand le shell se termine	Close the pane when the shell exits
+Sinon le panneau reste ouvert : Entrée pour relancer un shell.	Otherwise the pane stays open: press Enter to start a new shell.
+Historique	History
+Clavier	Keyboard
+Ctrl+C copie s'il y a une sélection (sinon interrompt)	Ctrl+C copies when there is a selection (otherwise interrupts)
+Ctrl+V colle (au lieu d'envoyer ^V)	Ctrl+V pastes (instead of sending ^V)
+Sélection	Selection
+Séparateurs de mots (double-clic)	Word separators (double-click)
+Diffusion du clavier	Keyboard broadcast
+Taper dans plusieurs panneaux à la fois :	Type into several panes at once:
+Activez / désactivez avec Ctrl+Maj+I (cadre rouge pendant la diffusion).	Toggle with Ctrl+Shift+I (red frame while broadcasting).
+Sécurité	Security
+Les programmes peuvent copier dans le presse-papiers (vim, tmux, OSC 52)	Programs can copy to the clipboard (vim, tmux, OSC 52)
+Les programmes peuvent LIRE le presse-papiers (OSC 52)	Programs can READ the clipboard (OSC 52)
+Lecture déconseillée : un programme distant (SSH) pourrait récupérer un mot de passe copié.	Reading is not recommended: a remote program (SSH) could grab a copied password.
+Confirmer avant de coller plusieurs lignes	Confirm before pasting several lines
+Cloche (BEL)	Bell (BEL)
+Focus	Focus
+Le focus suit la souris (panneau survolé = actif)	Focus follows the mouse (hovered pane = active)
+Sélection & presse-papiers	Selection & clipboard
+Copier automatiquement la sélection	Copy the selection automatically
+Clic du milieu : coller la sélection	Middle click: paste the selection
+Clic droit	Right click
+Double-clic : mot · triple-clic : ligne · Alt+glisser : sélection rectangulaire.	Double-click: word · triple-click: line · Alt+drag: rectangular selection.
+Défilement	Scrolling
+Ctrl+molette : taille de la police	Ctrl+wheel: font size
+Liens & applications	Links & applications
+Ctrl+clic ouvre les liens (http, https, file…)	Ctrl+click opens links (http, https, file…)
+Transmettre la souris aux programmes (htop, vim, mc…)	Pass the mouse to programs (htop, vim, mc…)
+Maintenir Maj pour sélectionner du texte malgré tout.	Hold Shift to select text anyway.
+Suggestions de commandes	Command suggestions
+Activer les suggestions (texte fantôme)	Enable suggestions (ghost text)
+Afficher aussi une liste de propositions sous le curseur	Also show a list of suggestions under the cursor
+Accepter avec	Accept with
+Ctrl+→ accepte un mot à la fois	Ctrl+→ accepts one word at a time
+Complétion intelligente (git, docker, cargo, npm, make, ssh, Django…)	Smart completion (git, docker, cargo, npm, make, ssh, Django…)
+Sous-commandes et options avec leur description, branches git, scripts npm, cibles make, hôtes SSH.	Subcommands and options with their description, git branches, npm scripts, make targets, SSH hosts.
+Proposer	Suggest
+Sources	Sources
+Historique zsh (~/.zsh_history)	zsh history (~/.zsh_history)
+Historique bash (~/.bash_history)	bash history (~/.bash_history)
+Les commandes lancées dans NovaTerm sont ajoutées automatiquement.	Commands run in NovaTerm are added automatically.
+Chargement de l'historique…	Loading history…
+Ne jamais suggérer les commandes commençant par (une par ligne) :	Never suggest commands starting with (one per line):
+Intégration shell	Shell integration
+Activer l'intégration shell (zsh, bash)	Enable shell integration (zsh, bash)
+Aides intelligentes (sans IA)	Smart helpers (no AI)
+Tout est calculé sur votre machine : rien n'est envoyé sur Internet, et aucune commande n'est exécutée sans vous.	Everything is computed on your machine: nothing is sent to the Internet, and no command runs without you.
+Proposer une correction pour les fautes de frappe (gti status → git status)	Suggest a fix for typos (gti status → git status)
+Astuces sur les commandes en échec (port occupé, module manquant, droits…)	Tips for failed commands (port in use, missing module, permissions…)
+« Expliquer la commande » (pages man et tldr)	“Explain command” (man pages and tldr)
+Pour des exemples en plus des explications : sudo apt install tldr	For examples on top of explanations: sudo apt install tldr
+Blocs de commandes	Command blocks
+Chaque commande et sa sortie forment un bloc (nécessite l'intégration shell, page Suggestions).	Each command and its output form a block (requires shell integration, Suggestions page).
+Activer les blocs de commandes	Enable command blocks
+Barre de couleur à gauche (vert = succès, rouge = échec, bleu = en cours)	Color bar on the left (green = success, red = failure, blue = running)
+Ligne de séparation entre les commandes	Separator line between commands
+Boutons au survol (copier la commande / la sortie, relancer, remonter)	Buttons on hover (copy command / output, rerun, scroll up)
+Badge statut et durée	Status and duration badge
+Notifications de fin de tâche	Task completion notifications
+Prévenir quand une longue commande se termine	Notify when a long command finishes
+Seulement si je suis sur une autre fenêtre ou un autre onglet	Only when I'm in another window or tab
+Jouer un son	Play a sound
+Autoriser les programmes à envoyer des notifications (OSC 9 / 777)	Allow programs to send notifications (OSC 9 / 777)
+Pastille sur les onglets en arrière-plan (● activité, ✔ / ✖ commande terminée)	Badge on background tabs (● activity, ✔ / ✖ command finished)
+Liens cliquables	Clickable links
+Activer les liens (URL, liens OSC 8)	Enable links (URLs, OSC 8 links)
+Détecter aussi les fichiers et erreurs (src/app.rs:120, File "x.py", line 3…)	Also detect files and errors (src/app.rs:120, File "x.py", line 3…)
+Ouvrir d'un simple clic (sinon Ctrl+clic)	Open with a single click (otherwise Ctrl+click)
+Éditeur pour les fichiers	Editor for files
+Images dans le terminal	Images in the terminal
+Afficher les images (protocoles iTerm2 et Kitty)	Display images (iTerm2 and Kitty protocols)
+Autoriser l'affichage d'images locales par chemin (Kitty)	Allow displaying local images by path (Kitty)
+imgcat ~/Images/photo.jpg\nimgcat --width 40 logo.png	imgcat ~/Pictures/photo.jpg\nimgcat --width 40 logo.png
+Au démarrage	At startup
+Restaurer la session précédente	Restore the previous session
+Ouvrir ce profil au démarrage	Open this profile at startup
+Aucun	None
+Profils de projet	Project profiles
+Un profil = des onglets et panneaux nommés, avec un dossier et une commande de démarrage par panneau.	A profile = named tabs and panes, each pane with a folder and a startup command.
+Nom	Name
+Ouvrir	Open
+Terminal rapide (« quake »)	Quick terminal (“quake”)
+Un raccourci global fait descendre un terminal depuis le haut de l'écran, et le cache à nouveau.	A global shortcut drops a terminal down from the top of the screen, and hides it again.
+Se cacher quand on clique ailleurs	Hide when clicking elsewhere
+Raccourci global	Global shortcut
+Touche :	Key:
+⌨ Appuyez sur la combinaison voulue… (Échap pour annuler)	⌨ Press the key combination… (Esc to cancel)
+⌨ Définir au clavier	⌨ Set with keyboard
+Appliquer	Apply
+Supprimer le raccourci du bureau	Remove the desktop shortcut
+Actualiser l'état	Refresh status
+Aucun raccourci créé pour l'instant.	No shortcut created yet.
+Essayer maintenant	Try it now
++ Nouveau snippet	+ New snippet
+Aucun snippet	No snippet
+Ajoutez vos commandes fréquentes (déploiement, logs, docker…) pour les lancer en deux touches.	Add your frequent commands (deploy, logs, docker…) to run them in two keystrokes.
+▶ Tester	▶ Test
+Exécuter directement (sinon la commande est seulement insérée, à valider avec Entrée)	Run directly (otherwise the command is only inserted, confirm with Enter)
+Dépannage	Troubleshooting
+Revenir à la police intégrée	Back to the built-in font
+Ouvrir config.toml dans l'éditeur	Open config.toml in the editor
+Recharger la configuration depuis le fichier	Reload the configuration from the file
+AppImage	AppImage
+✔ Présent dans le menu des applications.	✔ Present in the applications menu.
+Pas encore dans le menu des applications.	Not in the applications menu yet.
+Ranger dans ~/Applications et ajouter au menu	Move to ~/Applications and add to the menu
+Ajouter au menu sans déplacer	Add to the menu without moving
+Retirer du menu	Remove from the menu
+Proposer l'ajout au menu au démarrage	Offer to add to the menu at startup
+Mises à jour	Updates
+Vérifier automatiquement les nouvelles versions (au démarrage, puis toutes les 6 h)	Check for new versions automatically (at startup, then every 6 h)
+Proposer aussi les versions bêta	Also offer beta versions
+Seule la page publique des versions de GitHub est consultée ; rien d'autre n'est envoyé. L'AppImage se met à jour en un clic (fichier vérifié par SHA-256).	Only GitHub's public releases page is queried; nothing else is sent. The AppImage updates in one click (file verified with SHA-256).
+Rechercher maintenant	Check now
+Informations	Information
+Raccourcis clavier	Keyboard shortcuts
+« + » puis appuyez sur la combinaison voulue (Échap pour annuler). « × » retire un raccourci.	“+” then press the key combination (Esc to cancel). “×” removes a shortcut.
+Tout réinitialiser	Reset all
+Appuyez sur une combinaison…	Press a key combination…
+Cliquez sur une ligne pour exécuter l'action. Modifiables dans Paramètres → Raccourcis.	Click a row to run the action. Customizable in Settings → Shortcuts.
+⬆ Dossier parent	⬆ Parent folder
+Choisir une image de fond	Choose a background image
+Premier plan désactivé	Always on top disabled
+📡 Diffusion activée : le clavier va à tous les panneaux	📡 Broadcast on: the keyboard goes to every pane
+Diffusion désactivée	Broadcast off
+Suggestions activées	Suggestions enabled
+Suggestions désactivées	Suggestions disabled
+→ accepter   Ctrl+→ un mot   Ctrl+↑↓ choisir	→ accept   Ctrl+→ one word   Ctrl+↑↓ choose
+✔ Mise à jour installée. Redémarrez NovaTerm pour l'utiliser (vos onglets sont restaurés).	✔ Update installed. Restart NovaTerm to use it (your tabs are restored).
+Redémarrer maintenant	Restart now
+Téléchargement et vérification…	Downloading and verifying…
+Mettre à jour maintenant	Update now
+Télécharger	Download
+Nouveautés	What's new
+Plus tard	Later
+Ignorer cette version	Skip this version
+💡 Explication	💡 Explanation
+Lecture des pages d'aide locales…	Reading local help pages…
+Exemples (tldr)	Examples (tldr)
+Astuce : installez « tldr » pour voir aussi des exemples (sudo apt install tldr).	Tip: install “tldr” to also see examples (sudo apt install tldr).
+Explication 100 % locale : pages man et tldr de votre système, sans IA ni Internet.	100% local explanation: your system's man and tldr pages, no AI, no Internet.
+💡 Astuces	💡 Tips
+Insérer	Insert
+Astuces locales, sans IA. Rien n'est exécuté sans vous.	Local tips, no AI. Nothing runs without you.
+Entrée : insérer   Maj+Entrée : exécuter   ↑↓ : choisir   Échap : fermer	Enter: insert   Shift+Enter: run   ↑↓: choose   Esc: close
+Aucune commande	No command
+Renommer…	Rename…
+Déplacer à gauche	Move left
+Déplacer à droite	Move right
+Fermer l'onglet	Close tab
+Aucun résultat	No result
+Valider (Entrée)	OK (Enter)
+Annuler (Échap)	Cancel (Esc)
+Paramètres de police	Font settings
+Ajouter NovaTerm au menu des applications ? Le fichier AppImage sera rangé dans ~/Applications.	Add NovaTerm to the applications menu? The AppImage file will be moved to ~/Applications.
+Ranger et ajouter au menu	Move and add to the menu
+Ne plus demander	Don't ask again
+Enregistrer comme profil	Save as profile
+Enregistrer	Save
+Nouvel onglet	New tab
+Onglet suivant	Next tab
+Onglet précédent	Previous tab
+Déplacer l'onglet à gauche	Move tab left
+Déplacer l'onglet à droite	Move tab right
+Renommer l'onglet	Rename tab
+Dernier onglet	Last tab
+Aller à l'onglet 1	Go to tab 1
+Aller à l'onglet 2	Go to tab 2
+Aller à l'onglet 3	Go to tab 3
+Aller à l'onglet 4	Go to tab 4
+Aller à l'onglet 5	Go to tab 5
+Aller à l'onglet 6	Go to tab 6
+Aller à l'onglet 7	Go to tab 7
+Aller à l'onglet 8	Go to tab 8
+Aller à l'onglet 9	Go to tab 9
+Diviser à droite	Split right
+Diviser en bas	Split down
+Fermer le panneau	Close pane
+Panneau de gauche	Left pane
+Panneau de droite	Right pane
+Panneau du haut	Upper pane
+Panneau du bas	Lower pane
+Panneau suivant	Next pane
+Panneau précédent	Previous pane
+Agrandir/réduire vers la gauche	Resize to the left
+Agrandir/réduire vers la droite	Resize to the right
+Agrandir/réduire vers le haut	Resize upward
+Agrandir/réduire vers le bas	Resize downward
+Égaliser les panneaux	Equalize panes
+Zoomer le panneau (plein onglet)	Zoom pane (full tab)
+Déplacer le panneau dans un nouvel onglet	Move pane to a new tab
+Copier	Copy
+Coller	Paste
+Coller la sélection	Paste selection
+Tout sélectionner	Select all
+Rechercher	Search
+Résultat suivant	Next result
+Résultat précédent	Previous result
+Effacer l'écran et l'historique	Clear screen and scrollback
+Réinitialiser le terminal	Reset terminal
+Défiler d'une ligne vers le haut	Scroll one line up
+Défiler d'une ligne vers le bas	Scroll one line down
+Page précédente de l'historique	Scrollback page up
+Page suivante de l'historique	Scrollback page down
+Début de l'historique	Top of scrollback
+Fin de l'historique	Bottom of scrollback
+Agrandir la police	Increase font size
+Réduire la police	Decrease font size
+Taille de police par défaut	Default font size
+Nouvelle fenêtre	New window
+Plein écran	Fullscreen
+Agrandir / restaurer la fenêtre	Maximize / restore window
+Afficher / masquer la barre d'onglets	Show / hide tab bar
+Afficher / masquer la barre de statut	Show / hide status bar
+Thème suivant	Next theme
+Augmenter l'opacité	Increase opacity
+Diminuer l'opacité	Decrease opacity
+Palette de commandes	Command palette
+Aide des raccourcis	Shortcut help
+Ouvrir le fichier de configuration	Open configuration file
+Recharger la configuration	Reload configuration
+Quitter NovaTerm	Quit NovaTerm
+Rechercher dans l'historique des commandes	Search command history
+Activer / désactiver les suggestions	Toggle suggestions
+Commande précédente (remonter)	Previous command (scroll up)
+Commande suivante (descendre)	Next command (scroll down)
+Copier la sortie de la dernière commande	Copy last command's output
+Copier la dernière commande	Copy last command
+Relancer la dernière commande	Rerun last command
+Taper dans tous les panneaux (diffusion)	Type into all panes (broadcast)
+Commandes favorites (snippets)	Favorite commands (snippets)
+Ouvrir un profil de projet	Open a project profile
+Enregistrer la disposition comme profil	Save layout as profile
+Importer un thème…	Import a theme…
+Terminal rapide (afficher / masquer)	Quick terminal (show / hide)
+Corriger la dernière commande (astuce)	Fix last command (tip)
+Expliquer la commande (hors ligne)	Explain command (offline)
+Rechercher une mise à jour	Check for updates
+Onglets	Tabs
+Panneaux	Panes
+Édition	Editing
+Outils	Tools
+PagePréc	PgUp
+PageSuiv	PgDn
+Début	Home
+Fin	End
+Inser	Ins
+Suppr	Del
+Échap	Esc
+Entrée	Enter
+Espace	Space
+Retour	Backspace
+Bloc	Block
+Barre	Beam
+Souligné	Underline
+Clignotement	Blink
+Fondu	Fade
+Pulsation	Pulse
+Rotation verticale	Vertical flip
+Menu contextuel	Context menu
+Copier la sélection, sinon coller	Copy selection, otherwise paste
+Désactivé	Off
+Flash visuel	Visual flash
+Flash + attention de la fenêtre	Flash + window attention
+Toujours	Always
+Échecs et commandes de plus de 2 s	Failures and commands over 2 s
+Jamais	Never
+Non (nouvelle session vide)	No (new empty session)
+Onglets, splits, dossiers et noms	Tabs, splits, folders and names
+Tout, avec le texte affiché	Everything, with the displayed text
+Suivre le système	Follow the system
+Selon l'heure	By time of day
+Panneaux de l'onglet	Panes of the tab
+Tous les panneaux de tous les onglets	All panes in all tabs
+→ ou Fin	→ or End
+→ seulement	→ only
+Tab (remplace la complétion du shell)	Tab (replaces shell completion)
+Celui du panneau actif	The active pane's
+Dossier personnel	Home folder
+Dossier personnalisé	Custom folder
+La plus récente	Most recent
+La plus utilisée	Most used
+Coller plusieurs lignes ?	Paste several lines?
+{} : police intégrée utilisée.	{}: using the built-in font.
+Profil « {} » ouvert	Profile “{}” opened
+Profil « {} » introuvable	Profile “{}” not found
+Profil « {} » enregistré (Paramètres → Session pour les commandes)	Profile “{}” saved (Settings → Session for startup commands)
+Sortie introuvable (effacée de l'historique)	Output not found (cleared from scrollback)
+Sortie copiée ({} lignes)	Output copied ({} lines)
+✔ Commande terminée	✔ Command finished
+✖ Échec (code {})	✖ Failed (code {})
+Échec du lancement du shell : {}	Could not start the shell: {}
+Shell relancé	Shell restarted
+Panneau divisé	Pane split
+Des programmes sont encore en cours : {}.\nIls seront arrêtés.	Programs are still running: {}.\nThey will be stopped.
+« {} » est encore en cours d'exécution.\nIl sera arrêté.	“{}” is still running.\nIt will be stopped.
+Fermer	Close
+Le texte contient {} lignes : chaque ligne peut être exécutée comme une commande.	The text has {} lines: each line may run as a command.
+Zoom désactivé	Zoom off
+Panneau zoomé	Pane zoomed
+Panneau déplacé dans un nouvel onglet	Pane moved to a new tab
+Copié dans le presse-papiers	Copied to clipboard
+Police : {} px	Font: {} px
+Panneaux égalisés	Panes equalized
+Écran effacé	Screen cleared
+Terminal réinitialisé	Terminal reset
+Police réinitialisée	Font reset
+Opacité : {} %	Opacity: {}%
+Configuration rechargée	Configuration reloaded
+Aucune correction proposée pour la dernière commande	No fix suggested for the last command
+« Expliquer la commande » est désactivé (Paramètres → Aides)	“Explain command” is disabled (Settings → Helpers)
+Rien à expliquer : tapez ou sélectionnez une commande	Nothing to explain: type or select a command
+Aucune commande (intégration shell inactive ?)	No command (shell integration inactive?)
+Commande copiée	Command copied
+Copier la commande	Copy command
+Copier la sortie	Copy output
+Relancer la commande	Rerun command
+Remonter au début de la commande	Scroll to the start of the command
+Recherche d'une mise à jour…	Checking for updates…
+NovaTerm {} est à jour ✔	NovaTerm {} is up to date ✔
+Mise à jour : {}	Update: {}
+Mise à jour échouée : {}	Update failed: {}
+ (bêta)	 (beta)
+🎉 NovaTerm {}{} est disponible — vous avez {}.	🎉 NovaTerm {}{} is available — you have {}.
+Insérer dans le terminal	Insert into the terminal
+Placer la commande sur la ligne, sans l'exécuter	Put the command on the line without running it
+Filtrer (plusieurs mots possibles)…	Filter (several words allowed)…
+▣ Profil : {}	▣ Profile: {}
+{} onglet(s)	{} tab(s)
+◐ Thème : {}	◐ Theme: {}
+Restaurer	Restore
+Agrandir	Maximize
+Réduire	Minimize
+Image de fond illisible : {}	Unreadable background image: {}
+personnalisé	custom
+Thème : {}	Theme: {}
+Police : {}	Font: {}
+{} : police intégrée conservée	{}: keeping the built-in font
+Nouvel onglet ({})	New tab ({})
+Palette de commandes ({})	Command palette ({})
+Paramètres ({})	Settings ({})
+Alt+{} · double-clic : renommer · clic milieu : fermer	Alt+{} · double-click: rename · middle click: close
+{} : commandes  ·  {} : aide	{}: commands  ·  {}: help
+Lien « {}: » non ouvert par sécurité	“{}:” link not opened for safety
+Ouverture du lien…	Opening link…
+Éditeur introuvable ({}) : vérifiez Paramètres → Liens	Editor not found ({}): check Settings → Links
+Ouverture de {}…	Opening {}…
+« {} » est un programme : non ouvert par sécurité	“{}” is a program: not opened for safety
+Processus terminé (code {})  —  Entrée : relancer  ·  fermer : {}	Process exited (code {})  —  Enter: restart  ·  close: {}
+Processus terminé  —  Entrée : relancer  ·  fermer : {}	Process exited  —  Enter: restart  ·  close: {}
+Rechercher (regex)…	Search (regex)…
+Précédent (Maj+Entrée)	Previous (Shift+Enter)
+Suivant (Entrée)	Next (Enter)
+Fermer (Échap)	Close (Esc)
+Commande, snippet, profil ou « thème … »  (↑ ↓ Entrée, Échap)	Command, snippet, profile or “theme …”  (↑ ↓ Enter, Esc)
+Commandes favorites…  (Paramètres → Snippets pour en ajouter)	Favorite commands…  (Settings → Snippets to add some)
+Profils de projet…  (« Enregistrer la disposition comme profil »)	Project profiles…  (“Save layout as profile”)
+Renommer l'onglet {}	Rename tab {}
+Vide = titre automatique	Empty = automatic title
+{} (Entrée)	{} (Enter)
+Emplacement actuel : {}	Current location: {}
+NovaTerm est dans le menu ({})	NovaTerm is in the menu ({})
+Intégration impossible : {}	Integration failed: {}
+Les {} onglet(s) actuels (splits, dossiers, noms) seront enregistrés. Les commandes de démarrage se règlent ensuite dans Paramètres → Session.	The current {} tab(s) (splits, folders, names) will be saved. Startup commands can then be set in Settings → Session.
+Nom du profil (ex. GPlus)	Profile name (e.g. GPlus)
+💡 {}  ({} pour corriger)	💡 {}  ({} to fix)
+Importer un thème	Import a theme
+Thème « {} » importé	Theme “{}” imported
+Import impossible : {}	Import failed: {}
+🔍 Rechercher un réglage	🔍 Search settings
+Langue / Language	Language / Langue
+Personnalisé	Custom
+iTerm2, Alacritty, Kitty, Windows Terminal, Xresources	iTerm2, Alacritty, Kitty, Windows Terminal, Xresources
+Thèmes importés ({})	Imported themes ({})
+Thème clair	Light theme
+Thème sombre	Dark theme
+Texte	Text
+Fond	Background
+Opacité du fond	Background opacity
+Assombrir les panneaux inactifs	Dim inactive panes
+Opacité de l'image	Image opacity
+Étirer l'image (sinon couvrir)	Stretch image (otherwise cover)
+Police actuelle : {}	Current font: {}
+ex. fira, mono…	e.g. fira, mono…
+{} polices à chasse fixe trouvées.	{} monospace fonts found.
+Interligne	Line spacing
+Espacement des lettres (px)	Letter spacing (px)
+Marges intérieures (px)	Inner padding (px)
+Masquer s'il n'y a qu'un onglet	Hide when there is only one tab
+Automatique	Automatic
+Arrondi des coins	Corner radius
+Arrêter l'animation après (s d'inactivité, 0 = jamais)	Stop animating after (s of inactivity, 0 = never)
+~/projets	~/projects
+Lignes d'historique	Scrollback lines
+Lignes par cran de molette	Lines per wheel step
+Propositions dans la liste	Suggestions in the list
+Caractères avant de suggérer	Characters before suggesting
+Opacité du texte fantôme	Ghost text opacity
+{} commandes connues.	{} known commands.
+Rechercher dans l'historique ({})	Search history ({})
+Corriger la dernière commande : {} · Expliquer : {} (ou « ? » au survol d'une commande)	Fix last command: {} · Explain: {} (or “?” when hovering a command)
+Navigation : {} / {} · copier la dernière sortie : {}	Navigation: {} / {} · copy last output: {}
+Durée minimale (s)	Minimum duration (s)
+vide = application par défaut	empty = default application
+Variables : {file} {line} {col}. « @tab commande » ouvre dans un nouvel onglet NovaTerm.	Variables: {file} {line} {col}. “@tab command” opens in a new NovaTerm tab.
+Lignes de texte restaurées par panneau	Text lines restored per pane
+Sauvegarde automatique (s, 0 = à la fermeture)	Autosave (s, 0 = on close)
+Enregistrer la disposition actuelle ({} onglet(s)) comme profil…	Save the current layout ({} tab(s)) as a profile…
+commande (ex. npm run dev)	command (e.g. npm run dev)
+En ligne de commande : novaterm --profile "{}"	From the command line: novaterm --profile "{}"
+Hauteur (part de l'écran)	Height (fraction of screen)
+Largeur (part de l'écran)	Width (fraction of screen)
+« {} » seule bloquerait cette touche partout : ajoutez Ctrl, Alt ou Maj, ou utilisez une touche F.	“{}” alone would block that key everywhere: add Ctrl, Alt or Shift, or use an F key.
+Cliquez puis appuyez sur la touche ou la combinaison	Click, then press the key or combination
+Recréer le raccourci du bureau avec cette touche	Recreate the desktop shortcut with this key
+✔ Actif dans le bureau : {}	✔ Active on the desktop: {}
+✖ {} pointe vers un programme introuvable ({}) : cliquez sur « Appliquer ».	✖ {} points to a missing program ({}): click “Apply”.
+Nom affiché dans la palette (ex. Logs du serveur)	Name shown in the palette (e.g. Server logs)
+Dupliquer	Duplicate
+Descendre	Move down
+Monter	Move up
+Lancer dans le panneau actif	Run in the active pane
+Commande (ex. docker compose logs -f --tail 100)	Command (e.g. docker compose logs -f --tail 100)
+Retiré du menu.	Removed from the menu.
+Version installée : {}	Installed version: {}
+Ne plus ignorer la {}	Stop skipping {}
+« {} » refusé : sans Ctrl ni Alt, cette touche ne pourrait plus être tapée dans le terminal.	“{}” rejected: without Ctrl or Alt, that key could no longer be typed in the terminal.
+{} retiré de « {} ».	{} removed from “{}”.
+ex. onglet, split…	e.g. tab, split…
+Ajouter un raccourci	Add a shortcut
+Filtrer…	Filter…
+APPARENCE	APPEARANCE
+TERMINAL	TERMINAL
+PRODUCTIVITÉ	PRODUCTIVITY
+ORGANISATION	ORGANIZATION
+SYSTÈME	SYSTEM
+Noir	Black
+Rouge	Red
+Vert	Green
+Jaune	Yellow
+Bleu	Blue
+Magenta	Magenta
+Cyan	Cyan
+Blanc	White
+Noir clair	Bright black
+Rouge clair	Bright red
+Vert clair	Bright green
+Jaune clair	Bright yellow
+Bleu clair	Bright blue
+Magenta clair	Bright magenta
+Cyan clair	Bright cyan
+Blanc clair	Bright white
+Double-clic / triple-clic	Double-click / triple-click
+Sélectionner un mot / une ligne	Select a word / a line
+Alt + glisser	Alt + drag
+Sélection rectangulaire	Rectangular selection
+Maj + glisser	Shift + drag
+Sélectionner même si le programme capture la souris	Select even when the program captures the mouse
+Clic du milieu	Middle click
+Ctrl + clic	Ctrl + click
+Ouvrir un lien	Open a link
+Ctrl + molette	Ctrl + wheel
+Taille de la police	Font size
+Double-clic sur un séparateur	Double-click a divider
+Remettre le split à 50 %	Reset the split to 50%
+Double-clic / clic milieu sur un onglet	Double-click / middle click a tab
+Renommer / fermer	Rename / close
+Quitter NovaTerm ?	Quit NovaTerm?
+Fermer l'onglet ?	Close tab?
+Fermer le panneau ?	Close pane?
+Quitter	Quit
+Faute de frappe ?	Typo?
+Programme introuvable	Program not found
+Script non exécutable	Script not executable
+Droits insuffisants	Insufficient permissions
+Relancer avec les droits administrateur ?	Run again with administrator rights?
+Port déjà utilisé	Port already in use
+Disque plein	Disk full
+Voyez l'espace libre et les plus gros dossiers.	Check free space and the largest folders.
+Module Python manquant	Missing Python module
+Module Node manquant	Missing Node module
+Script npm inconnu	Unknown npm script
+Voici les scripts disponibles dans package.json.	Here are the scripts available in package.json.
+Pas un dépôt git	Not a git repository
+Ce dossier n'est pas suivi par git : créez un dépôt ou placez-vous dans le bon dossier.	This folder isn't tracked by git: create a repository or move to the right folder.
+Branche sans amont	Branch has no upstream
+Publiez la branche en la reliant au dépôt distant.	Publish the branch by linking it to the remote.
+Pas de connexion / DNS	No connection / DNS
+Le nom du serveur ne peut pas être résolu : vérifiez la connexion réseau.	The server name can't be resolved: check your network connection.
+Paquet introuvable	Package not found
+La liste des paquets est peut-être ancienne : mettez-la à jour puis réessayez.	The package list may be outdated: update it and try again.
+apt est déjà occupé	apt is busy
+Une autre installation est en cours (Gestionnaire de mises à jour ?). Attendez qu'elle se termine.	Another installation is running (Update Manager?). Wait for it to finish.
+Connexion refusée	Connection refused
+Le service visé ne tourne pas (ou pas sur ce port).	The target service isn't running (or not on this port).
+Pas un projet Rust	Not a Rust project
+Placez-vous dans le dossier du projet (celui qui contient Cargo.toml).	Move to the project folder (the one containing Cargo.toml).
+pip protégé par le système	pip is managed by the system
+Utilisez un environnement virtuel pour installer des paquets Python.	Use a virtual environment to install Python packages.
+Accès à Docker refusé	Docker access denied
+Ajoutez votre compte au groupe docker, puis fermez et rouvrez la session.	Add your account to the docker group, then log out and back in.
+Un autre programme utilise déjà ce port.	Another program is already using this port.
+  (sans gras)	  (no bold)

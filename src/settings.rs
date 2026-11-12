@@ -1,5 +1,6 @@
 //! Fenêtre de paramètres (par pages), éditeur de raccourcis, aide et sélecteur d'image.
 
+use crate::i18n::t;
 use std::collections::BTreeMap;
 use std::path::PathBuf;
 
@@ -70,65 +71,65 @@ impl Page {
 
     fn title(self) -> &'static str {
         match self {
-            Page::Appearance => "Apparence",
-            Page::Font => "Police",
-            Page::Window => "Fenêtre",
-            Page::Cursor => "Curseur",
-            Page::Terminal => "Terminal",
-            Page::Mouse => "Souris",
-            Page::Suggestions => "Suggestions",
-            Page::Helpers => "Aides",
-            Page::Blocks => "Blocs & alertes",
-            Page::Links => "Liens & éditeur",
-            Page::Images => "Images",
-            Page::Session => "Session & profils",
-            Page::Quake => "Terminal rapide",
-            Page::Snippets => "Snippets",
-            Page::Shortcuts => "Raccourcis",
-            Page::Advanced => "Avancé",
+            Page::Appearance => t("Apparence"),
+            Page::Font => t("Police"),
+            Page::Window => t("Fenêtre"),
+            Page::Cursor => t("Curseur"),
+            Page::Terminal => t("Terminal"),
+            Page::Mouse => t("Souris"),
+            Page::Suggestions => t("Suggestions"),
+            Page::Helpers => t("Aides"),
+            Page::Blocks => t("Blocs & alertes"),
+            Page::Links => t("Liens & éditeur"),
+            Page::Images => t("Images"),
+            Page::Session => t("Session & profils"),
+            Page::Quake => t("Terminal rapide"),
+            Page::Snippets => t("Snippets"),
+            Page::Shortcuts => t("Raccourcis"),
+            Page::Advanced => t("Avancé"),
         }
     }
 
     fn subtitle(self) -> &'static str {
         match self {
-            Page::Appearance => "Thème, couleurs, transparence et image de fond.",
-            Page::Font => "Police, taille et espacements du texte.",
-            Page::Window => "Taille, barres, décorations et comportement de la fenêtre.",
-            Page::Cursor => "Forme et animation du curseur.",
-            Page::Terminal => "Shell, historique, clavier et sélection.",
-            Page::Mouse => "Focus, presse-papiers, défilement et souris dans les programmes.",
-            Page::Suggestions => "Suite de commande proposée pendant la frappe et complétion intelligente.",
-            Page::Helpers => "Corrections et explications 100 % locales, sans IA.",
-            Page::Blocks => "Chaque commande devient un bloc avec son statut ; alertes de fin de tâche.",
-            Page::Links => "URL, fichiers et erreurs cliquables, et l'éditeur qui les ouvre.",
-            Page::Images => "Afficher des images directement dans le terminal.",
-            Page::Session => "Retrouver ses onglets au démarrage et ouvrir des espaces de travail tout prêts.",
-            Page::Quake => "Un terminal qui descend du haut de l'écran avec une seule touche.",
-            Page::Snippets => "Vos commandes favorites, accessibles depuis la palette.",
-            Page::Shortcuts => "Toutes les actions et leurs raccourcis, modifiables.",
-            Page::Advanced => "Dépannage et informations.",
+            Page::Appearance => t("Thème, couleurs, transparence et image de fond."),
+            Page::Font => t("Police, taille et espacements du texte."),
+            Page::Window => t("Taille, barres, décorations et comportement de la fenêtre."),
+            Page::Cursor => t("Forme et animation du curseur."),
+            Page::Terminal => t("Shell, historique, clavier et sélection."),
+            Page::Mouse => t("Focus, presse-papiers, défilement et souris dans les programmes."),
+            Page::Suggestions => t("Suite de commande proposée pendant la frappe et complétion intelligente."),
+            Page::Helpers => t("Corrections et explications 100 % locales, sans IA."),
+            Page::Blocks => t("Chaque commande devient un bloc avec son statut ; alertes de fin de tâche."),
+            Page::Links => t("URL, fichiers et erreurs cliquables, et l'éditeur qui les ouvre."),
+            Page::Images => t("Afficher des images directement dans le terminal."),
+            Page::Session => t("Retrouver ses onglets au démarrage et ouvrir des espaces de travail tout prêts."),
+            Page::Quake => t("Un terminal qui descend du haut de l'écran avec une seule touche."),
+            Page::Snippets => t("Vos commandes favorites, accessibles depuis la palette."),
+            Page::Shortcuts => t("Toutes les actions et leurs raccourcis, modifiables."),
+            Page::Advanced => t("Dépannage et informations."),
         }
     }
 
     /// Mots-clés pour la recherche dans les paramètres.
     fn keywords(self) -> &'static str {
         match self {
-            Page::Appearance => "thème couleur theme transparence opacité image fond clair sombre auto importer iterm alacritty kitty animation notification toast",
-            Page::Font => "police font taille interligne espacement lettre marge nerd fira jetbrains",
-            Page::Window => "fenêtre taille démarrage agrandie plein écran premier plan barre onglets statut décoration titre coins arrondis fermeture confirmer",
-            Page::Cursor => "curseur bloc barre souligné clignotement fondu pulsation animation traînée batterie",
-            Page::Terminal => "shell zsh bash powershell cmd wsl dossier historique scrollback clavier ctrl+c ctrl+v coller sélection mots diffusion broadcast cloche bell",
-            Page::Mouse => "souris focus suit copier sélection clic milieu droit molette défilement zoom lien htop vim",
-            Page::Suggestions => "suggestion autosuggestion historique complétion completion git docker npm intégration shell zsh",
-            Page::Helpers => "aide astuce erreur faute frappe typo corriger expliquer man tldr",
-            Page::Blocks => "bloc commande statut durée badge notification alerte son fin tâche onglet pastille",
-            Page::Links => "lien url fichier chemin erreur éditeur vscode code vim nano ctrl+clic",
-            Page::Images => "image imgcat kitty iterm photo svg png",
-            Page::Session => "session restaurer démarrage profil projet espace de travail sauvegarde",
-            Page::Quake => "quake rapide déroulant f12 raccourci global toggle",
-            Page::Snippets => "snippet favori commande palette",
-            Page::Shortcuts => "raccourci clavier touche keybinding",
-            Page::Advanced => "dépannage police réinitialiser config version",
+            Page::Appearance => t("thème couleur theme transparence opacité image fond clair sombre auto importer iterm alacritty kitty animation notification toast"),
+            Page::Font => t("police font taille interligne espacement lettre marge nerd fira jetbrains"),
+            Page::Window => t("fenêtre taille démarrage agrandie plein écran premier plan barre onglets statut décoration titre coins arrondis fermeture confirmer"),
+            Page::Cursor => t("curseur bloc barre souligné clignotement fondu pulsation animation traînée batterie"),
+            Page::Terminal => t("shell zsh bash powershell cmd wsl dossier historique scrollback clavier ctrl+c ctrl+v coller sélection mots diffusion broadcast cloche bell"),
+            Page::Mouse => t("souris focus suit copier sélection clic milieu droit molette défilement zoom lien htop vim"),
+            Page::Suggestions => t("suggestion autosuggestion historique complétion completion git docker npm intégration shell zsh"),
+            Page::Helpers => t("aide astuce erreur faute frappe typo corriger expliquer man tldr"),
+            Page::Blocks => t("bloc commande statut durée badge notification alerte son fin tâche onglet pastille"),
+            Page::Links => t("lien url fichier chemin erreur éditeur vscode code vim nano ctrl+clic"),
+            Page::Images => t("image imgcat kitty iterm photo svg png"),
+            Page::Session => t("session restaurer démarrage profil projet espace de travail sauvegarde"),
+            Page::Quake => t("quake rapide déroulant f12 raccourci global toggle"),
+            Page::Snippets => t("snippet favori commande palette"),
+            Page::Shortcuts => t("raccourci clavier touche keybinding"),
+            Page::Advanced => t("dépannage police réinitialiser config version"),
         }
     }
 
@@ -193,7 +194,7 @@ fn hint(ui: &mut egui::Ui, text: &str) {
 fn color_row(ui: &mut egui::Ui, label: &str, c: &mut [u8; 3]) {
     ui.horizontal(|ui| {
         egui::widgets::color_picker::color_edit_button_srgb(ui, c);
-        ui.label(label);
+        ui.label(crate::i18n::tr(label));
     });
 }
 
@@ -229,7 +230,7 @@ pub fn show(
 ) {
     apply_captured(config, st, bindings);
     let screen = ctx.screen_rect();
-    egui::Window::new("Paramètres")
+    egui::Window::new(t("Paramètres"))
         .open(open)
         .resizable(true)
         .collapsible(false)
@@ -272,7 +273,7 @@ pub fn show(
 }
 
 fn search_box(ui: &mut egui::Ui, st: &mut SettingsUi, width: f32) {
-    let r = ui.add(egui::TextEdit::singleline(&mut st.search).hint_text("🔍 Rechercher un réglage").desired_width(width));
+    let r = ui.add(egui::TextEdit::singleline(&mut st.search).hint_text(t("🔍 Rechercher un réglage")).desired_width(width));
     // Entrée : aller à la première page trouvée.
     if r.lost_focus() && ui.input(|i| i.key_pressed(Key::Enter)) {
         if let Some(p) = Page::GROUPS.iter().flat_map(|(_, p)| p.iter()).find(|p| p.matches(&st.search)) {
@@ -296,7 +297,7 @@ fn sidebar(ui: &mut egui::Ui, st: &mut SettingsUi) {
             }
             any = true;
             ui.add_space(8.0);
-            ui.label(RichText::new(group).small().strong().color(text.gamma_multiply(0.5)));
+            ui.label(RichText::new(t(group)).small().strong().color(text.gamma_multiply(0.5)));
             for p in visible {
                 let selected = st.page == p;
                 let (rect, resp) = ui.allocate_exact_size(egui::vec2(ui.available_width(), 30.0), egui::Sense::click());
@@ -322,7 +323,7 @@ fn sidebar(ui: &mut egui::Ui, st: &mut SettingsUi) {
             }
         }
         if !any {
-            ui.label(RichText::new("Aucun réglage trouvé").color(Color32::GRAY));
+            ui.label(RichText::new(t("Aucun réglage trouvé")).color(Color32::GRAY));
         }
     });
 }
@@ -367,36 +368,44 @@ fn body(
     // Pied de page fixe.
     ui.separator();
     ui.horizontal(|ui| {
-        if ui.button("⌨ Aide des raccourcis").clicked() {
+        if ui.button(t("⌨ Aide des raccourcis")).clicked() {
             out.help = true;
         }
-        if ui.button("📄 Ouvrir config.toml").on_hover_text(Config::path().map(|p| p.display().to_string()).unwrap_or_default()).clicked() {
+        if ui.button(t("📄 Ouvrir config.toml")).on_hover_text(Config::path().map(|p| p.display().to_string()).unwrap_or_default()).clicked() {
             out.action = Some(Action::OpenConfig);
         }
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
             if st.confirm_reset {
-                if ui.button("Annuler").clicked() {
+                if ui.button(t("Annuler")).clicked() {
                     st.confirm_reset = false;
                 }
-                if ui.button(RichText::new("Confirmer : tout réinitialiser").color(Color32::from_rgb(230, 100, 90))).clicked() {
+                if ui.button(RichText::new(t("Confirmer : tout réinitialiser")).color(Color32::from_rgb(230, 100, 90))).clicked() {
                     *config = Config::default();
                     st.confirm_reset = false;
                 }
-            } else if ui.button("Tout réinitialiser…").clicked() {
+            } else if ui.button(t("Tout réinitialiser…")).clicked() {
                 st.confirm_reset = true;
             }
-            ui.label(RichText::new("✔ Enregistré automatiquement").small().color(Color32::GRAY));
+            ui.label(RichText::new(t("✔ Enregistré automatiquement")).small().color(Color32::GRAY));
         });
     });
 }
 
 fn page_appearance(ui: &mut egui::Ui, config: &mut Config, out: &mut SettingsOut) {
-    card(ui, "Thème", |ui| {
+    card(ui, t("Langue / Language"), |ui| {
+        egui::ComboBox::from_id_salt("language").width(260.0).selected_text(config.language.label()).show_ui(ui, |ui| {
+            use crate::i18n::Language;
+            for l in [Language::Auto, Language::French, Language::English] {
+                ui.selectable_value(&mut config.language, l, l.label());
+            }
+        });
+    });
+    card(ui, t("Thème"), |ui| {
         let names = config.theme_names();
         ui.horizontal(|ui| {
             egui::ComboBox::from_id_salt("theme_combo")
                 .width(220.0)
-                .selected_text(if config.custom_theme.is_some() { "Personnalisé".to_string() } else { config.theme_name.clone() })
+                .selected_text(if config.custom_theme.is_some() { t("Personnalisé").to_string() } else { config.theme_name.clone() })
                 .show_ui(ui, |ui| {
                     for name in &names {
                         let active = config.custom_theme.is_none() && config.theme_name == *name;
@@ -406,17 +415,17 @@ fn page_appearance(ui: &mut egui::Ui, config: &mut Config, out: &mut SettingsOut
                         }
                     }
                 });
-            if ui.button("Importer…").on_hover_text("iTerm2, Alacritty, Kitty, Windows Terminal, Xresources").clicked() {
+            if ui.button(t("Importer…")).on_hover_text(t("iTerm2, Alacritty, Kitty, Windows Terminal, Xresources")).clicked() {
                 out.action = Some(Action::ImportTheme);
             }
         });
         if !config.user_themes.is_empty() {
-            egui::CollapsingHeader::new(format!("Thèmes importés ({})", config.user_themes.len())).show(ui, |ui| {
+            egui::CollapsingHeader::new(crate::i18n::tf("Thèmes importés ({})", &[&config.user_themes.len()])).show(ui, |ui| {
                 let mut remove = None;
                 for (i, t) in config.user_themes.iter().enumerate() {
                     ui.horizontal(|ui| {
                         ui.label(&t.name);
-                        if ui.small_button("Supprimer").clicked() {
+                        if ui.small_button(crate::i18n::t("Supprimer")).clicked() {
                             remove = Some(i);
                         }
                     });
@@ -430,7 +439,7 @@ fn page_appearance(ui: &mut egui::Ui, config: &mut Config, out: &mut SettingsOut
             });
         }
         ui.horizontal(|ui| {
-            ui.label("Clair / sombre automatique");
+            ui.label(t("Clair / sombre automatique"));
             egui::ComboBox::from_id_salt("auto_theme").selected_text(config.auto_theme.label()).show_ui(ui, |ui| {
                 for m in [AutoTheme::Off, AutoTheme::System, AutoTheme::Schedule] {
                     ui.selectable_value(&mut config.auto_theme, m, m.label());
@@ -448,33 +457,33 @@ fn page_appearance(ui: &mut egui::Ui, config: &mut Config, out: &mut SettingsOut
                     });
                 });
             };
-            pick(ui, "light_theme", "Thème clair", &mut config.light_theme);
-            pick(ui, "dark_theme", "Thème sombre", &mut config.dark_theme);
+            pick(ui, "light_theme", t("Thème clair"), &mut config.light_theme);
+            pick(ui, "dark_theme", t("Thème sombre"), &mut config.dark_theme);
             if config.auto_theme == AutoTheme::Schedule {
                 ui.horizontal(|ui| {
-                    ui.label("Jour à partir de");
+                    ui.label(t("Jour à partir de"));
                     ui.add(egui::DragValue::new(&mut config.day_hour).range(0..=23).suffix(" h"));
-                    ui.label("nuit à partir de");
+                    ui.label(t("nuit à partir de"));
                     ui.add(egui::DragValue::new(&mut config.night_hour).range(0..=23).suffix(" h"));
                 });
             }
         }
         ui.horizontal(|ui| {
             if config.custom_theme.is_none() {
-                if ui.button("Personnaliser les couleurs…").clicked() {
+                if ui.button(t("Personnaliser les couleurs…")).clicked() {
                     config.custom_theme = Some(config.theme());
                 }
-            } else if ui.button("Revenir au thème prédéfini").clicked() {
+            } else if ui.button(t("Revenir au thème prédéfini")).clicked() {
                 config.custom_theme = None;
             }
         });
         if let Some(custom) = &mut config.custom_theme {
             ui.add_space(4.0);
             ui.columns(2, |cols| {
-                color_row(&mut cols[0], "Texte", &mut custom.foreground);
-                color_row(&mut cols[0], "Fond", &mut custom.background);
-                color_row(&mut cols[1], "Curseur", &mut custom.cursor);
-                color_row(&mut cols[1], "Sélection", &mut custom.selection);
+                color_row(&mut cols[0], t("Texte"), &mut custom.foreground);
+                color_row(&mut cols[0], t("Fond"), &mut custom.background);
+                color_row(&mut cols[1], t("Curseur"), &mut custom.cursor);
+                color_row(&mut cols[1], t("Sélection"), &mut custom.selection);
             });
             egui::CollapsingHeader::new("Couleurs ANSI (16)").show(ui, |ui| {
                 let names = [
@@ -490,18 +499,18 @@ fn page_appearance(ui: &mut egui::Ui, config: &mut Config, out: &mut SettingsOut
         }
 
     });
-    card(ui, "Transparence", |ui| {
-        ui.add(egui::Slider::new(&mut config.opacity, 0.15..=1.0).text("Opacité du fond"));
-        hint(ui, "Nécessite un compositeur (activé par défaut sur Cinnamon).");
-        ui.add(egui::Slider::new(&mut config.dim_inactive, 0.0..=0.7).text("Assombrir les panneaux inactifs"));
+    card(ui, t("Transparence"), |ui| {
+        ui.add(egui::Slider::new(&mut config.opacity, 0.15..=1.0).text(t("Opacité du fond")));
+        hint(ui, t("Nécessite un compositeur (activé par défaut sur Cinnamon)."));
+        ui.add(egui::Slider::new(&mut config.dim_inactive, 0.0..=0.7).text(t("Assombrir les panneaux inactifs")));
 
     });
-    card(ui, "Image de fond", |ui| {
+    card(ui, t("Image de fond"), |ui| {
         ui.horizontal(|ui| {
-            if ui.button("Parcourir…").clicked() {
+            if ui.button(t("Parcourir…")).clicked() {
                 out.browse = true;
             }
-            if config.bg_image.is_some() && ui.button("Retirer").clicked() {
+            if config.bg_image.is_some() && ui.button(t("Retirer")).clicked() {
                 config.bg_image = None;
             }
         });
@@ -510,31 +519,31 @@ fn page_appearance(ui: &mut egui::Ui, config: &mut Config, out: &mut SettingsOut
         }
         ui.add_enabled(
             config.bg_image.is_some(),
-            egui::Slider::new(&mut config.bg_image_opacity, 0.0..=1.0).text("Opacité de l'image"),
+            egui::Slider::new(&mut config.bg_image_opacity, 0.0..=1.0).text(t("Opacité de l'image")),
         );
-        ui.add_enabled(config.bg_image.is_some(), egui::Checkbox::new(&mut config.bg_image_stretch, "Étirer l'image (sinon couvrir)"));
+        ui.add_enabled(config.bg_image.is_some(), egui::Checkbox::new(&mut config.bg_image_stretch, t("Étirer l'image (sinon couvrir)")));
 
     });
-    card(ui, "Animations", |ui| {
-        ui.checkbox(&mut config.toasts, "Notifications animées (copie, split, thème…)");
+    card(ui, t("Animations"), |ui| {
+        ui.checkbox(&mut config.toasts, t("Notifications animées (copie, split, thème…)"));
     });
 }
 
 fn page_font(ui: &mut egui::Ui, config: &mut Config, st: &mut SettingsUi, catalog: Option<&BTreeMap<String, FontEntry>>) {
-    card(ui, "Famille", |ui| {
+    card(ui, t("Famille"), |ui| {
         let current = if config.font_family.is_empty() { fonts::BUILTIN.to_string() } else { config.font_family.clone() };
         match catalog {
             None => {
-                ui.label(format!("Police actuelle : {current}"));
-                if ui.button("Choisir une police du système…").clicked() {
+                ui.label(crate::i18n::tf("Police actuelle : {}", &[&current]));
+                if ui.button(t("Choisir une police du système…")).clicked() {
                     st.font_scan_requested = true;
                 }
-                hint(ui, "Recherche les polices à chasse fixe installées (fontconfig).");
+                hint(ui, t("Recherche les polices à chasse fixe installées (fontconfig)."));
             }
             Some(cat) => {
                 ui.horizontal(|ui| {
-                    ui.label("Filtrer");
-                    ui.add(egui::TextEdit::singleline(&mut st.font_filter).desired_width(180.0).hint_text("ex. fira, mono…"));
+                    ui.label(t("Filtrer"));
+                    ui.add(egui::TextEdit::singleline(&mut st.font_filter).desired_width(180.0).hint_text(t("ex. fira, mono…")));
                 });
                 egui::ComboBox::from_id_salt("font_family")
                     .width(300.0)
@@ -551,19 +560,19 @@ fn page_font(ui: &mut egui::Ui, config: &mut Config, st: &mut SettingsUi, catalo
                             }
                             let mut label = name.clone();
                             if entry.bold.is_none() {
-                                label.push_str("  (sans gras)");
+                                label.push_str(t("  (sans gras)"));
                             }
                             if ui.selectable_label(config.font_family == *name, label).clicked() {
                                 config.font_family = name.clone();
                             }
                         }
                     });
-                hint(ui, &format!("{} polices à chasse fixe trouvées.", cat.len()));
+                hint(ui, &crate::i18n::tf("{} polices à chasse fixe trouvées.", &[&cat.len()]));
             }
         }
 
     });
-    card(ui, "Taille", |ui| {
+    card(ui, t("Taille"), |ui| {
         ui.horizontal(|ui| {
             if ui.button(" − ").clicked() {
                 config.font_size = (config.font_size - 1.0).max(6.0);
@@ -572,42 +581,42 @@ fn page_font(ui: &mut egui::Ui, config: &mut Config, st: &mut SettingsUi, catalo
             if ui.button(" + ").clicked() {
                 config.font_size = (config.font_size + 1.0).min(48.0);
             }
-            if ui.button("Par défaut").clicked() {
+            if ui.button(t("Par défaut")).clicked() {
                 config.font_size = Config::default().font_size;
             }
         });
-        ui.add(egui::Slider::new(&mut config.font_size, 6.0..=48.0).text("Taille").step_by(0.5));
-        hint(ui, "Raccourcis : Ctrl+Maj++ / Ctrl+Maj+- / Ctrl+0, ou Ctrl+molette.");
+        ui.add(egui::Slider::new(&mut config.font_size, 6.0..=48.0).text(t("Taille")).step_by(0.5));
+        hint(ui, t("Raccourcis : Ctrl+Maj++ / Ctrl+Maj+- / Ctrl+0, ou Ctrl+molette."));
 
     });
-    card(ui, "Espacement", |ui| {
-        ui.add(egui::Slider::new(&mut config.line_spacing, 0.9..=2.0).text("Interligne"));
-        ui.add(egui::Slider::new(&mut config.letter_spacing, -2.0..=6.0).text("Espacement des lettres (px)"));
-        ui.add(egui::Slider::new(&mut config.padding, 0.0..=40.0).text("Marges intérieures (px)"));
+    card(ui, t("Espacement"), |ui| {
+        ui.add(egui::Slider::new(&mut config.line_spacing, 0.9..=2.0).text(t("Interligne")));
+        ui.add(egui::Slider::new(&mut config.letter_spacing, -2.0..=6.0).text(t("Espacement des lettres (px)")));
+        ui.add(egui::Slider::new(&mut config.padding, 0.0..=40.0).text(t("Marges intérieures (px)")));
 
     });
-    card(ui, "Aperçu", |ui| {
+    card(ui, t("Aperçu"), |ui| {
         let sample = "AaBbCc 0123456789 Il1| O0 {}[]() <= => != ~ @#$%\nâêîôû éèàç ── │ ├─┤ ✓ ✗ → ← ▲ ▼  λ π";
         egui::Frame::NONE
             .fill(ui.visuals().extreme_bg_color)
             .corner_radius(6)
             .inner_margin(8)
             .show(ui, |ui| {
-                ui.label(RichText::new(sample).family(egui::FontFamily::Name("Mono".into())).size(config.font_size));
+                ui.label(RichText::new(sample).family(egui::FontFamily::Name(t("Mono").into())).size(config.font_size));
             });
     });
 }
 
 fn page_window(ui: &mut egui::Ui, config: &mut Config) {
-    card(ui, "Taille au démarrage", |ui| {
+    card(ui, t("Taille au démarrage"), |ui| {
         ui.horizontal(|ui| {
-            ui.label("Largeur");
+            ui.label(t("Largeur"));
             ui.add(egui::DragValue::new(&mut config.window_width).range(420.0..=7680.0).suffix(" px"));
-            ui.label("Hauteur");
+            ui.label(t("Hauteur"));
             ui.add(egui::DragValue::new(&mut config.window_height).range(260.0..=4320.0).suffix(" px"));
         });
         ui.horizontal(|ui| {
-            if ui.button("Utiliser la taille actuelle").clicked() {
+            if ui.button(t("Utiliser la taille actuelle")).clicked() {
                 if let Some(r) = ui.ctx().input(|i| i.viewport().inner_rect) {
                     config.window_width = r.width().round();
                     config.window_height = r.height().round();
@@ -621,46 +630,46 @@ fn page_window(ui: &mut egui::Ui, config: &mut Config) {
                 }
             }
         });
-        ui.checkbox(&mut config.remember_window_size, "Mémoriser la taille à la fermeture");
-        ui.checkbox(&mut config.start_maximized, "Démarrer agrandie");
-        ui.checkbox(&mut config.start_fullscreen, "Démarrer en plein écran");
-        ui.checkbox(&mut config.always_on_top, "Toujours au premier plan");
+        ui.checkbox(&mut config.remember_window_size, t("Mémoriser la taille à la fermeture"));
+        ui.checkbox(&mut config.start_maximized, t("Démarrer agrandie"));
+        ui.checkbox(&mut config.start_fullscreen, t("Démarrer en plein écran"));
+        ui.checkbox(&mut config.always_on_top, t("Toujours au premier plan"));
 
     });
-    card(ui, "Barres", |ui| {
-        ui.checkbox(&mut config.show_tab_bar, "Barre d'onglets");
-        ui.add_enabled(config.show_tab_bar, egui::Checkbox::new(&mut config.hide_single_tab, "Masquer s'il n'y a qu'un onglet"));
-        ui.checkbox(&mut config.show_status_bar, "Barre de statut");
+    card(ui, t("Barres"), |ui| {
+        ui.checkbox(&mut config.show_tab_bar, t("Barre d'onglets"));
+        ui.add_enabled(config.show_tab_bar, egui::Checkbox::new(&mut config.hide_single_tab, t("Masquer s'il n'y a qu'un onglet")));
+        ui.checkbox(&mut config.show_status_bar, t("Barre de statut"));
 
     });
-    card(ui, "Décorations", |ui| {
-        ui.checkbox(&mut config.custom_decorations, "Décorations personnalisées");
-        hint(ui, "Barre de titre, boutons et coins arrondis dessinés par NovaTerm (sinon ceux du système).");
+    card(ui, t("Décorations"), |ui| {
+        ui.checkbox(&mut config.custom_decorations, t("Décorations personnalisées"));
+        hint(ui, t("Barre de titre, boutons et coins arrondis dessinés par NovaTerm (sinon ceux du système)."));
         ui.add_enabled_ui(config.custom_decorations, |ui| {
             ui.horizontal(|ui| {
-                ui.label("Titre");
-                ui.add(egui::TextEdit::singleline(&mut config.custom_title).hint_text("Automatique").desired_width(220.0));
+                ui.label(t("Titre"));
+                ui.add(egui::TextEdit::singleline(&mut config.custom_title).hint_text(t("Automatique")).desired_width(220.0));
             });
-            ui.add(egui::Slider::new(&mut config.corner_radius, 0.0..=24.0).text("Arrondi des coins"));
+            ui.add(egui::Slider::new(&mut config.corner_radius, 0.0..=24.0).text(t("Arrondi des coins")));
         });
 
     });
-    card(ui, "Fermeture", |ui| {
-        ui.checkbox(&mut config.confirm_close, "Confirmer si un programme tourne encore (serveur, éditeur…)");
+    card(ui, t("Fermeture"), |ui| {
+        ui.checkbox(&mut config.confirm_close, t("Confirmer si un programme tourne encore (serveur, éditeur…)"));
     });
 }
 
 fn page_cursor(ui: &mut egui::Ui, config: &mut Config) {
-    card(ui, "Forme", |ui| {
+    card(ui, t("Forme"), |ui| {
         ui.horizontal(|ui| {
             for shape in [CursorShape::Block, CursorShape::Beam, CursorShape::Underline] {
                 ui.selectable_value(&mut config.cursor_shape, shape, shape.label());
             }
         });
-        ui.checkbox(&mut config.cursor_app_shape, "Laisser les applications changer la forme (vim…)");
+        ui.checkbox(&mut config.cursor_app_shape, t("Laisser les applications changer la forme (vim…)"));
     });
-    card(ui, "Animation", |ui| {
-        ui.checkbox(&mut config.cursor_blink, "Animer le curseur");
+    card(ui, t("Animation"), |ui| {
+        ui.checkbox(&mut config.cursor_blink, t("Animer le curseur"));
         ui.add_enabled_ui(config.cursor_blink, |ui| {
             ui.horizontal(|ui| {
                 for style in [BlinkStyle::Blink, BlinkStyle::Fade, BlinkStyle::Pulse, BlinkStyle::Flip] {
@@ -668,22 +677,22 @@ fn page_cursor(ui: &mut egui::Ui, config: &mut Config) {
                 }
             });
         });
-        ui.checkbox(&mut config.cursor_smooth, "Déplacement fluide (traînée)");
+        ui.checkbox(&mut config.cursor_smooth, t("Déplacement fluide (traînée)"));
         ui.add(
             egui::Slider::new(&mut config.cursor_blink_timeout, 0..=120)
-                .text("Arrêter l'animation après (s d'inactivité, 0 = jamais)"),
+                .text(t("Arrêter l'animation après (s d'inactivité, 0 = jamais)")),
         );
-        hint(ui, "Économise la batterie : sans animation, NovaTerm ne consomme rien au repos.");
+        hint(ui, t("Économise la batterie : sans animation, NovaTerm ne consomme rien au repos."));
     });
 }
 
 fn page_terminal(ui: &mut egui::Ui, config: &mut Config) {
-    card(ui, "Shell", |ui| {
+    card(ui, t("Shell"), |ui| {
         ui.horizontal(|ui| {
-            ui.label("Programme");
+            ui.label(t("Programme"));
             ui.add(egui::TextEdit::singleline(&mut config.shell).hint_text(platform::default_shell()).desired_width(220.0));
             egui::ComboBox::from_id_salt("shell_presets").selected_text("Choisir…").show_ui(ui, |ui| {
-                if ui.selectable_label(config.shell.is_empty(), "Par défaut du système").clicked() {
+                if ui.selectable_label(config.shell.is_empty(), t("Par défaut du système")).clicked() {
                     config.shell.clear();
                 }
                 for (label, cmd) in platform::shell_presets() {
@@ -693,9 +702,9 @@ fn page_terminal(ui: &mut egui::Ui, config: &mut Config) {
                 }
             });
         });
-        hint(ui, "Vide = shell par défaut. S'applique aux nouveaux panneaux.");
+        hint(ui, t("Vide = shell par défaut. S'applique aux nouveaux panneaux."));
         ui.horizontal(|ui| {
-            ui.label("Dossier de départ");
+            ui.label(t("Dossier de départ"));
             egui::ComboBox::from_id_salt("start_dir").selected_text(config.start_dir.label()).show_ui(ui, |ui| {
                 for d in [StartDir::Inherit, StartDir::Home, StartDir::Custom] {
                     ui.selectable_value(&mut config.start_dir, d, d.label());
@@ -703,45 +712,45 @@ fn page_terminal(ui: &mut egui::Ui, config: &mut Config) {
             });
         });
         if config.start_dir == StartDir::Custom {
-            ui.add(egui::TextEdit::singleline(&mut config.custom_start_dir).hint_text("~/projets").desired_width(280.0));
+            ui.add(egui::TextEdit::singleline(&mut config.custom_start_dir).hint_text(t("~/projets")).desired_width(280.0));
         }
-        ui.checkbox(&mut config.close_on_exit, "Fermer le panneau quand le shell se termine");
-        hint(ui, "Sinon le panneau reste ouvert : Entrée pour relancer un shell.");
+        ui.checkbox(&mut config.close_on_exit, t("Fermer le panneau quand le shell se termine"));
+        hint(ui, t("Sinon le panneau reste ouvert : Entrée pour relancer un shell."));
 
     });
-    card(ui, "Historique", |ui| {
-        ui.add(egui::Slider::new(&mut config.scrollback, 0..=200_000).text("Lignes d'historique").logarithmic(true));
+    card(ui, t("Historique"), |ui| {
+        ui.add(egui::Slider::new(&mut config.scrollback, 0..=200_000).text(t("Lignes d'historique")).logarithmic(true));
 
     });
-    card(ui, "Clavier", |ui| {
-        ui.checkbox(&mut config.smart_copy, "Ctrl+C copie s'il y a une sélection (sinon interrompt)");
-        ui.checkbox(&mut config.ctrl_v_paste, "Ctrl+V colle (au lieu d'envoyer ^V)");
+    card(ui, t("Clavier"), |ui| {
+        ui.checkbox(&mut config.smart_copy, t("Ctrl+C copie s'il y a une sélection (sinon interrompt)"));
+        ui.checkbox(&mut config.ctrl_v_paste, t("Ctrl+V colle (au lieu d'envoyer ^V)"));
 
     });
-    card(ui, "Sélection", |ui| {
+    card(ui, t("Sélection"), |ui| {
         ui.horizontal(|ui| {
-            ui.label("Séparateurs de mots (double-clic)");
+            ui.label(t("Séparateurs de mots (double-clic)"));
             ui.add(egui::TextEdit::singleline(&mut config.word_separators).font(egui::TextStyle::Monospace).desired_width(180.0));
         });
 
     });
-    card(ui, "Diffusion du clavier", |ui| {
+    card(ui, t("Diffusion du clavier"), |ui| {
         ui.horizontal(|ui| {
-            ui.label("Taper dans plusieurs panneaux à la fois :");
+            ui.label(t("Taper dans plusieurs panneaux à la fois :"));
             for s in [BroadcastScope::Tab, BroadcastScope::All] {
                 ui.selectable_value(&mut config.broadcast_scope, s, s.label());
             }
         });
-        hint(ui, "Activez / désactivez avec Ctrl+Maj+I (cadre rouge pendant la diffusion).");
+        hint(ui, t("Activez / désactivez avec Ctrl+Maj+I (cadre rouge pendant la diffusion)."));
 
     });
-    card(ui, "Sécurité", |ui| {
-        ui.checkbox(&mut config.osc52_write, "Les programmes peuvent copier dans le presse-papiers (vim, tmux, OSC 52)");
-        ui.checkbox(&mut config.osc52_read, "Les programmes peuvent LIRE le presse-papiers (OSC 52)");
-        hint(ui, "Lecture déconseillée : un programme distant (SSH) pourrait récupérer un mot de passe copié.");
-        ui.checkbox(&mut config.warn_multiline_paste, "Confirmer avant de coller plusieurs lignes");
+    card(ui, t("Sécurité"), |ui| {
+        ui.checkbox(&mut config.osc52_write, t("Les programmes peuvent copier dans le presse-papiers (vim, tmux, OSC 52)"));
+        ui.checkbox(&mut config.osc52_read, t("Les programmes peuvent LIRE le presse-papiers (OSC 52)"));
+        hint(ui, t("Lecture déconseillée : un programme distant (SSH) pourrait récupérer un mot de passe copié."));
+        ui.checkbox(&mut config.warn_multiline_paste, t("Confirmer avant de coller plusieurs lignes"));
     });
-    card(ui, "Cloche (BEL)", |ui| {
+    card(ui, t("Cloche (BEL)"), |ui| {
         ui.horizontal(|ui| {
             for b in [BellMode::None, BellMode::Visual, BellMode::Urgent] {
                 ui.selectable_value(&mut config.bell, b, b.label());
@@ -751,82 +760,82 @@ fn page_terminal(ui: &mut egui::Ui, config: &mut Config) {
 }
 
 fn page_mouse(ui: &mut egui::Ui, config: &mut Config) {
-    card(ui, "Focus", |ui| {
-        ui.checkbox(&mut config.focus_follows_mouse, "Le focus suit la souris (panneau survolé = actif)");
+    card(ui, t("Focus"), |ui| {
+        ui.checkbox(&mut config.focus_follows_mouse, t("Le focus suit la souris (panneau survolé = actif)"));
     });
-    card(ui, "Sélection & presse-papiers", |ui| {
-        ui.checkbox(&mut config.copy_on_select, "Copier automatiquement la sélection");
-        ui.checkbox(&mut config.middle_click_paste, "Clic du milieu : coller la sélection");
+    card(ui, t("Sélection & presse-papiers"), |ui| {
+        ui.checkbox(&mut config.copy_on_select, t("Copier automatiquement la sélection"));
+        ui.checkbox(&mut config.middle_click_paste, t("Clic du milieu : coller la sélection"));
         ui.horizontal(|ui| {
-            ui.label("Clic droit");
+            ui.label(t("Clic droit"));
             egui::ComboBox::from_id_salt("right_click").selected_text(config.right_click.label()).show_ui(ui, |ui| {
                 for r in [RightClick::Menu, RightClick::Paste, RightClick::CopyOrPaste] {
                     ui.selectable_value(&mut config.right_click, r, r.label());
                 }
             });
         });
-        hint(ui, "Double-clic : mot · triple-clic : ligne · Alt+glisser : sélection rectangulaire.");
+        hint(ui, t("Double-clic : mot · triple-clic : ligne · Alt+glisser : sélection rectangulaire."));
     });
-    card(ui, "Défilement", |ui| {
-        ui.add(egui::Slider::new(&mut config.scroll_multiplier, 1.0..=10.0).text("Lignes par cran de molette"));
-        ui.checkbox(&mut config.ctrl_scroll_zoom, "Ctrl+molette : taille de la police");
+    card(ui, t("Défilement"), |ui| {
+        ui.add(egui::Slider::new(&mut config.scroll_multiplier, 1.0..=10.0).text(t("Lignes par cran de molette")));
+        ui.checkbox(&mut config.ctrl_scroll_zoom, t("Ctrl+molette : taille de la police"));
     });
-    card(ui, "Liens & applications", |ui| {
-        ui.checkbox(&mut config.ctrl_click_links, "Ctrl+clic ouvre les liens (http, https, file…)");
-        ui.checkbox(&mut config.mouse_reporting, "Transmettre la souris aux programmes (htop, vim, mc…)");
-        hint(ui, "Maintenir Maj pour sélectionner du texte malgré tout.");
+    card(ui, t("Liens & applications"), |ui| {
+        ui.checkbox(&mut config.ctrl_click_links, t("Ctrl+clic ouvre les liens (http, https, file…)"));
+        ui.checkbox(&mut config.mouse_reporting, t("Transmettre la souris aux programmes (htop, vim, mc…)"));
+        hint(ui, t("Maintenir Maj pour sélectionner du texte malgré tout."));
     });
 }
 
 fn page_suggestions(ui: &mut egui::Ui, config: &mut Config, info: &SettingsInfo, out: &mut SettingsOut, bindings: &Bindings) {
-    card(ui, "Suggestions de commandes", |ui| {
+    card(ui, t("Suggestions de commandes"), |ui| {
         hint(
             ui,
             "Pendant que vous tapez, NovaTerm propose la suite de la commande d'après votre historique \
              (texte grisé après le curseur). Tout reste local sur votre machine.",
         );
-        ui.checkbox(&mut config.suggestions, "Activer les suggestions (texte fantôme)");
+        ui.checkbox(&mut config.suggestions, t("Activer les suggestions (texte fantôme)"));
         ui.add_enabled_ui(config.suggestions, |ui| {
-            ui.checkbox(&mut config.suggest_list, "Afficher aussi une liste de propositions sous le curseur");
+            ui.checkbox(&mut config.suggest_list, t("Afficher aussi une liste de propositions sous le curseur"));
             ui.add_enabled(
                 config.suggest_list,
-                egui::Slider::new(&mut config.suggest_max, 2..=12).text("Propositions dans la liste"),
+                egui::Slider::new(&mut config.suggest_max, 2..=12).text(t("Propositions dans la liste")),
             );
             ui.horizontal(|ui| {
-                ui.label("Accepter avec");
+                ui.label(t("Accepter avec"));
                 egui::ComboBox::from_id_salt("suggest_accept").selected_text(config.suggest_accept.label()).show_ui(ui, |ui| {
                     for k in [AcceptKey::RightOrEnd, AcceptKey::Right, AcceptKey::Tab] {
                         ui.selectable_value(&mut config.suggest_accept, k, k.label());
                     }
                 });
             });
-            ui.checkbox(&mut config.suggest_word_accept, "Ctrl+→ accepte un mot à la fois");
-            ui.checkbox(&mut config.completions, "Complétion intelligente (git, docker, cargo, npm, make, ssh, Django…)");
-            hint(ui, "Sous-commandes et options avec leur description, branches git, scripts npm, cibles make, hôtes SSH.");
+            ui.checkbox(&mut config.suggest_word_accept, t("Ctrl+→ accepte un mot à la fois"));
+            ui.checkbox(&mut config.completions, t("Complétion intelligente (git, docker, cargo, npm, make, ssh, Django…)"));
+            hint(ui, t("Sous-commandes et options avec leur description, branches git, scripts npm, cibles make, hôtes SSH."));
             ui.horizontal(|ui| {
-                ui.label("Proposer");
+                ui.label(t("Proposer"));
                 for r in [Ranking::Recent, Ranking::Frequent] {
                     ui.selectable_value(&mut config.suggest_ranking, r, r.label());
                 }
             });
-            ui.add(egui::Slider::new(&mut config.suggest_min_chars, 1..=5).text("Caractères avant de suggérer"));
-            ui.add(egui::Slider::new(&mut config.suggest_opacity, 0.15..=0.9).text("Opacité du texte fantôme"));
+            ui.add(egui::Slider::new(&mut config.suggest_min_chars, 1..=5).text(t("Caractères avant de suggérer")));
+            ui.add(egui::Slider::new(&mut config.suggest_opacity, 0.15..=0.9).text(t("Opacité du texte fantôme")));
         });
 
     });
-    card(ui, "Sources", |ui| {
-        ui.checkbox(&mut config.history_zsh, "Historique zsh (~/.zsh_history)");
-        ui.checkbox(&mut config.history_bash, "Historique bash (~/.bash_history)");
-        hint(ui, "Les commandes lancées dans NovaTerm sont ajoutées automatiquement.");
+    card(ui, t("Sources"), |ui| {
+        ui.checkbox(&mut config.history_zsh, t("Historique zsh (~/.zsh_history)"));
+        ui.checkbox(&mut config.history_bash, t("Historique bash (~/.bash_history)"));
+        hint(ui, t("Les commandes lancées dans NovaTerm sont ajoutées automatiquement."));
         if info.history_loading {
-            ui.label("Chargement de l'historique…");
+            ui.label(t("Chargement de l'historique…"));
         } else {
-            ui.label(format!("{} commandes connues.", info.history_len));
+            ui.label(crate::i18n::tf("{} commandes connues.", &[&info.history_len]));
         }
-        if ui.button(format!("Rechercher dans l'historique ({})", bindings.first_shortcut(Action::HistorySearch))).clicked() {
+        if ui.button(crate::i18n::tf("Rechercher dans l'historique ({})", &[&bindings.first_shortcut(Action::HistorySearch)])).clicked() {
             out.action = Some(Action::HistorySearch);
         }
-        ui.label("Ne jamais suggérer les commandes commençant par (une par ligne) :");
+        ui.label(t("Ne jamais suggérer les commandes commençant par (une par ligne) :"));
         ui.add(
             egui::TextEdit::multiline(&mut config.suggest_ignore)
                 .font(egui::TextStyle::Monospace)
@@ -835,8 +844,8 @@ fn page_suggestions(ui: &mut egui::Ui, config: &mut Config, info: &SettingsInfo,
         );
 
     });
-    card(ui, "Intégration shell", |ui| {
-        ui.checkbox(&mut config.shell_integration, "Activer l'intégration shell (zsh, bash)");
+    card(ui, t("Intégration shell"), |ui| {
+        ui.checkbox(&mut config.shell_integration, t("Activer l'intégration shell (zsh, bash)"));
         hint(
             ui,
             "Nécessaire aux suggestions et aux blocs de commandes. NovaTerm charge un petit script \
@@ -856,33 +865,29 @@ fn page_suggestions(ui: &mut egui::Ui, config: &mut Config, info: &SettingsInfo,
 }
 
 fn page_helpers(ui: &mut egui::Ui, config: &mut Config, bindings: &Bindings) {
-    card(ui, "Aides intelligentes (sans IA)", |ui| {
-        hint(ui, "Tout est calculé sur votre machine : rien n'est envoyé sur Internet, et aucune commande n'est exécutée sans vous.");
-        ui.checkbox(&mut config.help_typos, "Proposer une correction pour les fautes de frappe (gti status → git status)");
-        ui.checkbox(&mut config.help_error_tips, "Astuces sur les commandes en échec (port occupé, module manquant, droits…)");
-        ui.checkbox(&mut config.help_explain, "« Expliquer la commande » (pages man et tldr)");
+    card(ui, t("Aides intelligentes (sans IA)"), |ui| {
+        hint(ui, t("Tout est calculé sur votre machine : rien n'est envoyé sur Internet, et aucune commande n'est exécutée sans vous."));
+        ui.checkbox(&mut config.help_typos, t("Proposer une correction pour les fautes de frappe (gti status → git status)"));
+        ui.checkbox(&mut config.help_error_tips, t("Astuces sur les commandes en échec (port occupé, module manquant, droits…)"));
+        ui.checkbox(&mut config.help_explain, t("« Expliquer la commande » (pages man et tldr)"));
         hint(
             ui,
-            &format!(
-                "Corriger la dernière commande : {} · Expliquer : {} (ou « ? » au survol d'une commande)",
-                bindings.first_shortcut(Action::FixLastCommand),
-                bindings.first_shortcut(Action::ExplainCommand)
-            ),
+            &crate::i18n::tf("Corriger la dernière commande : {} · Expliquer : {} (ou « ? » au survol d'une commande)", &[&bindings.first_shortcut(Action::FixLastCommand), &bindings.first_shortcut(Action::ExplainCommand)]),
         );
-        hint(ui, "Pour des exemples en plus des explications : sudo apt install tldr");
+        hint(ui, t("Pour des exemples en plus des explications : sudo apt install tldr"));
     });
 }
 
 fn page_blocks(ui: &mut egui::Ui, config: &mut Config, bindings: &Bindings) {
-    card(ui, "Blocs de commandes", |ui| {
-        hint(ui, "Chaque commande et sa sortie forment un bloc (nécessite l'intégration shell, page Suggestions).");
-        ui.checkbox(&mut config.blocks_enabled, "Activer les blocs de commandes");
+    card(ui, t("Blocs de commandes"), |ui| {
+        hint(ui, t("Chaque commande et sa sortie forment un bloc (nécessite l'intégration shell, page Suggestions)."));
+        ui.checkbox(&mut config.blocks_enabled, t("Activer les blocs de commandes"));
         ui.add_enabled_ui(config.blocks_enabled, |ui| {
-            ui.checkbox(&mut config.blocks_gutter, "Barre de couleur à gauche (vert = succès, rouge = échec, bleu = en cours)");
-            ui.checkbox(&mut config.blocks_separator, "Ligne de séparation entre les commandes");
-            ui.checkbox(&mut config.blocks_actions, "Boutons au survol (copier la commande / la sortie, relancer, remonter)");
+            ui.checkbox(&mut config.blocks_gutter, t("Barre de couleur à gauche (vert = succès, rouge = échec, bleu = en cours)"));
+            ui.checkbox(&mut config.blocks_separator, t("Ligne de séparation entre les commandes"));
+            ui.checkbox(&mut config.blocks_actions, t("Boutons au survol (copier la commande / la sortie, relancer, remonter)"));
             ui.horizontal(|ui| {
-                ui.label("Badge statut et durée");
+                ui.label(t("Badge statut et durée"));
                 egui::ComboBox::from_id_salt("badges").selected_text(config.blocks_badges.label()).show_ui(ui, |ui| {
                     for m in [BadgeMode::Always, BadgeMode::Notable, BadgeMode::Never] {
                         ui.selectable_value(&mut config.blocks_badges, m, m.label());
@@ -892,36 +897,31 @@ fn page_blocks(ui: &mut egui::Ui, config: &mut Config, bindings: &Bindings) {
         });
         hint(
             ui,
-            &format!(
-                "Navigation : {} / {} · copier la dernière sortie : {}",
-                bindings.first_shortcut(Action::PrevCommand),
-                bindings.first_shortcut(Action::NextCommand),
-                bindings.first_shortcut(Action::CopyLastOutput)
-            ),
+            &crate::i18n::tf("Navigation : {} / {} · copier la dernière sortie : {}", &[&bindings.first_shortcut(Action::PrevCommand), &bindings.first_shortcut(Action::NextCommand), &bindings.first_shortcut(Action::CopyLastOutput)]),
         );
 
     });
-    card(ui, "Notifications de fin de tâche", |ui| {
-        ui.checkbox(&mut config.notify_long_commands, "Prévenir quand une longue commande se termine");
+    card(ui, t("Notifications de fin de tâche"), |ui| {
+        ui.checkbox(&mut config.notify_long_commands, t("Prévenir quand une longue commande se termine"));
         ui.add_enabled_ui(config.notify_long_commands, |ui| {
-            ui.add(egui::Slider::new(&mut config.notify_threshold_secs, 2..=600).text("Durée minimale (s)").logarithmic(true));
-            ui.checkbox(&mut config.notify_only_unfocused, "Seulement si je suis sur une autre fenêtre ou un autre onglet");
-            ui.checkbox(&mut config.notify_sound, "Jouer un son");
+            ui.add(egui::Slider::new(&mut config.notify_threshold_secs, 2..=600).text(t("Durée minimale (s)")).logarithmic(true));
+            ui.checkbox(&mut config.notify_only_unfocused, t("Seulement si je suis sur une autre fenêtre ou un autre onglet"));
+            ui.checkbox(&mut config.notify_sound, t("Jouer un son"));
         });
-        ui.checkbox(&mut config.notify_from_apps, "Autoriser les programmes à envoyer des notifications (OSC 9 / 777)");
-        ui.checkbox(&mut config.tab_activity, "Pastille sur les onglets en arrière-plan (● activité, ✔ / ✖ commande terminée)");
+        ui.checkbox(&mut config.notify_from_apps, t("Autoriser les programmes à envoyer des notifications (OSC 9 / 777)"));
+        ui.checkbox(&mut config.tab_activity, t("Pastille sur les onglets en arrière-plan (● activité, ✔ / ✖ commande terminée)"));
     });
 }
 
 fn page_links(ui: &mut egui::Ui, config: &mut Config) {
-    card(ui, "Liens cliquables", |ui| {
-        ui.checkbox(&mut config.ctrl_click_links, "Activer les liens (URL, liens OSC 8)");
+    card(ui, t("Liens cliquables"), |ui| {
+        ui.checkbox(&mut config.ctrl_click_links, t("Activer les liens (URL, liens OSC 8)"));
         ui.add_enabled_ui(config.ctrl_click_links, |ui| {
-            ui.checkbox(&mut config.detect_paths, "Détecter aussi les fichiers et erreurs (src/app.rs:120, File \"x.py\", line 3…)");
-            ui.checkbox(&mut config.link_plain_click, "Ouvrir d'un simple clic (sinon Ctrl+clic)");
+            ui.checkbox(&mut config.detect_paths, t("Détecter aussi les fichiers et erreurs (src/app.rs:120, File \"x.py\", line 3…)"));
+            ui.checkbox(&mut config.link_plain_click, t("Ouvrir d'un simple clic (sinon Ctrl+clic)"));
         });
     });
-    card(ui, "Éditeur pour les fichiers", |ui| {
+    card(ui, t("Éditeur pour les fichiers"), |ui| {
         egui::ComboBox::from_id_salt("editor_preset")
             .width(300.0)
             .selected_text(
@@ -929,7 +929,7 @@ fn page_links(ui: &mut egui::Ui, config: &mut Config) {
                     .into_iter()
                     .find(|(_, t)| *t == config.editor_command)
                     .map(|(l, _)| l.to_string())
-                    .unwrap_or_else(|| "Personnalisé".into()),
+                    .unwrap_or_else(|| t("Personnalisé").into()),
             )
             .show_ui(ui, |ui| {
                 for (label, tpl) in links::editor_presets() {
@@ -941,32 +941,32 @@ fn page_links(ui: &mut egui::Ui, config: &mut Config) {
         ui.add(
             egui::TextEdit::singleline(&mut config.editor_command)
                 .font(egui::TextStyle::Monospace)
-                .hint_text("vide = application par défaut")
+                .hint_text(t("vide = application par défaut"))
                 .desired_width(360.0),
         );
-        hint(ui, "Variables : {file} {line} {col}. « @tab commande » ouvre dans un nouvel onglet NovaTerm.");
+        hint(ui, t("Variables : {file} {line} {col}. « @tab commande » ouvre dans un nouvel onglet NovaTerm."));
     });
 }
 
 fn page_images(ui: &mut egui::Ui, config: &mut Config) {
-    card(ui, "Images dans le terminal", |ui| {
-        ui.checkbox(&mut config.images_enabled, "Afficher les images (protocoles iTerm2 et Kitty)");
+    card(ui, t("Images dans le terminal"), |ui| {
+        ui.checkbox(&mut config.images_enabled, t("Afficher les images (protocoles iTerm2 et Kitty)"));
         ui.add_enabled_ui(config.images_enabled, |ui| {
-            ui.checkbox(&mut config.images_allow_files, "Autoriser l'affichage d'images locales par chemin (Kitty)");
+            ui.checkbox(&mut config.images_allow_files, t("Autoriser l'affichage d'images locales par chemin (Kitty)"));
         });
         hint(
             ui,
             "Essayez : imgcat photo.png (fourni par NovaTerm), ou des outils compatibles comme \
              « kitty +kitten icat », chafa --format kitty, viu, ranger, yazi.",
         );
-        ui.label(RichText::new("imgcat ~/Images/photo.jpg\nimgcat --width 40 logo.png").monospace());
+        ui.label(RichText::new(t("imgcat ~/Images/photo.jpg\nimgcat --width 40 logo.png")).monospace());
     });
 }
 
 fn page_session(ui: &mut egui::Ui, config: &mut Config, info: &SettingsInfo, out: &mut SettingsOut) {
-    card(ui, "Au démarrage", |ui| {
+    card(ui, t("Au démarrage"), |ui| {
         ui.horizontal(|ui| {
-            ui.label("Restaurer la session précédente");
+            ui.label(t("Restaurer la session précédente"));
             egui::ComboBox::from_id_salt("restore").selected_text(config.restore_session.label()).show_ui(ui, |ui| {
                 for m in [RestoreMode::Off, RestoreMode::Layout, RestoreMode::LayoutAndContent] {
                     ui.selectable_value(&mut config.restore_session, m, m.label());
@@ -974,17 +974,17 @@ fn page_session(ui: &mut egui::Ui, config: &mut Config, info: &SettingsInfo, out
             });
         });
         ui.add_enabled_ui(config.restore_session == RestoreMode::LayoutAndContent, |ui| {
-            ui.add(egui::Slider::new(&mut config.restore_lines, 20..=3000).text("Lignes de texte restaurées par panneau").logarithmic(true));
+            ui.add(egui::Slider::new(&mut config.restore_lines, 20..=3000).text(t("Lignes de texte restaurées par panneau")).logarithmic(true));
         });
         ui.add_enabled_ui(config.restore_session != RestoreMode::Off, |ui| {
-            ui.add(egui::Slider::new(&mut config.autosave_secs, 0..=600).text("Sauvegarde automatique (s, 0 = à la fermeture)"));
+            ui.add(egui::Slider::new(&mut config.autosave_secs, 0..=600).text(t("Sauvegarde automatique (s, 0 = à la fermeture)")));
         });
         ui.horizontal(|ui| {
-            ui.label("Ouvrir ce profil au démarrage");
+            ui.label(t("Ouvrir ce profil au démarrage"));
             egui::ComboBox::from_id_salt("startup_profile")
                 .selected_text(if config.startup_profile.is_empty() { "Aucun".to_string() } else { config.startup_profile.clone() })
                 .show_ui(ui, |ui| {
-                    ui.selectable_value(&mut config.startup_profile, String::new(), "Aucun");
+                    ui.selectable_value(&mut config.startup_profile, String::new(), t("Aucun"));
                     for p in &config.profiles {
                         ui.selectable_value(&mut config.startup_profile, p.name.clone(), &p.name);
                     }
@@ -992,28 +992,28 @@ fn page_session(ui: &mut egui::Ui, config: &mut Config, info: &SettingsInfo, out
         });
 
     });
-    card(ui, "Profils de projet", |ui| {
-        hint(ui, "Un profil = des onglets et panneaux nommés, avec un dossier et une commande de démarrage par panneau.");
-        if ui.button(format!("Enregistrer la disposition actuelle ({} onglet(s)) comme profil…", info.tabs)).clicked() {
+    card(ui, t("Profils de projet"), |ui| {
+        hint(ui, t("Un profil = des onglets et panneaux nommés, avec un dossier et une commande de démarrage par panneau."));
+        if ui.button(crate::i18n::tf("Enregistrer la disposition actuelle ({} onglet(s)) comme profil…", &[&info.tabs])).clicked() {
             out.action = Some(Action::SaveProfile);
         }
         let mut remove = None;
         for (pi, profile) in config.profiles.iter_mut().enumerate() {
             egui::CollapsingHeader::new(format!("▣ {}", profile.name)).id_salt(("profile", pi)).show(ui, |ui| {
                 ui.horizontal(|ui| {
-                    ui.label("Nom");
+                    ui.label(t("Nom"));
                     ui.text_edit_singleline(&mut profile.name);
-                    if ui.button("Ouvrir").clicked() {
+                    if ui.button(t("Ouvrir")).clicked() {
                         out.open_profile = Some(pi);
                     }
-                    if ui.button("Supprimer").clicked() {
+                    if ui.button(t("Supprimer")).clicked() {
                         remove = Some(pi);
                     }
                 });
                 for (ti, tab) in profile.tabs.iter_mut().enumerate() {
                     ui.label(RichText::new(format!("Onglet {}", ti + 1)).strong());
                     ui.horizontal(|ui| {
-                        ui.label("Titre");
+                        ui.label(t("Titre"));
                         let mut t = tab.title.clone().unwrap_or_default();
                         if ui.add(egui::TextEdit::singleline(&mut t).hint_text("automatique").desired_width(160.0)).changed() {
                             tab.title = (!t.is_empty()).then_some(t);
@@ -1030,7 +1030,7 @@ fn page_session(ui: &mut egui::Ui, config: &mut Config, info: &SettingsInfo, out
                                 }
                                 let mut c = command.clone().unwrap_or_default();
                                 if ui
-                                    .add(egui::TextEdit::singleline(&mut c).hint_text("commande (ex. npm run dev)").desired_width(w).font(egui::TextStyle::Monospace))
+                                    .add(egui::TextEdit::singleline(&mut c).hint_text(t("commande (ex. npm run dev)")).desired_width(w).font(egui::TextStyle::Monospace))
                                     .changed()
                                 {
                                     *command = (!c.is_empty()).then_some(c);
@@ -1039,7 +1039,7 @@ fn page_session(ui: &mut egui::Ui, config: &mut Config, info: &SettingsInfo, out
                         }
                     }
                 }
-                hint(ui, &format!("En ligne de commande : novaterm --profile \"{}\"", profile.name));
+                hint(ui, &crate::i18n::tf("En ligne de commande : novaterm --profile \"{}\"", &[&profile.name]));
             });
         }
         if let Some(i) = remove {
@@ -1052,11 +1052,11 @@ fn page_session(ui: &mut egui::Ui, config: &mut Config, info: &SettingsInfo, out
 }
 
 fn page_quake(ui: &mut egui::Ui, config: &mut Config, st: &mut SettingsUi, out: &mut SettingsOut) {
-    card(ui, "Terminal rapide (« quake »)", |ui| {
-        hint(ui, "Un raccourci global fait descendre un terminal depuis le haut de l'écran, et le cache à nouveau.");
-        ui.add(egui::Slider::new(&mut config.quake_height, 0.2..=1.0).text("Hauteur (part de l'écran)"));
-        ui.add(egui::Slider::new(&mut config.quake_width, 0.3..=1.0).text("Largeur (part de l'écran)"));
-        ui.checkbox(&mut config.quake_hide_on_unfocus, "Se cacher quand on clique ailleurs");
+    card(ui, t("Terminal rapide (« quake »)"), |ui| {
+        hint(ui, t("Un raccourci global fait descendre un terminal depuis le haut de l'écran, et le cache à nouveau."));
+        ui.add(egui::Slider::new(&mut config.quake_height, 0.2..=1.0).text(t("Hauteur (part de l'écran)")));
+        ui.add(egui::Slider::new(&mut config.quake_width, 0.3..=1.0).text(t("Largeur (part de l'écran)")));
+        ui.checkbox(&mut config.quake_hide_on_unfocus, t("Se cacher quand on clique ailleurs"));
     });
     // Touche capturée au clavier : appliquée immédiatement au bureau.
     if let Some(c) = st.quake_captured.take() {
@@ -1067,10 +1067,7 @@ fn page_quake(ui: &mut egui::Ui, config: &mut Config, st: &mut SettingsUi, out: 
                 | Key::Insert
         );
         if alone && !fkey {
-            st.quake_note = Some(format!(
-                "« {} » seule bloquerait cette touche partout : ajoutez Ctrl, Alt ou Maj, ou utilisez une touche F.",
-                c.display()
-            ));
+            st.quake_note = Some(crate::i18n::tf("« {} » seule bloquerait cette touche partout : ajoutez Ctrl, Alt ou Maj, ou utilisez une touche F.", &[&c.display()]));
         } else {
             config.quake_hotkey = c.to_config_string();
             out.install_quake_shortcut = true;
@@ -1079,19 +1076,19 @@ fn page_quake(ui: &mut egui::Ui, config: &mut Config, st: &mut SettingsUi, out: 
     if st.quake_status.is_none() {
         st.quake_status = Some(crate::quake::shortcut_status());
     }
-    card(ui, "Raccourci global", |ui| {
+    card(ui, t("Raccourci global"), |ui| {
         ui.horizontal(|ui| {
-            ui.label("Touche :");
+            ui.label(t("Touche :"));
             let current = KeyCombo::parse(&config.quake_hotkey).map(|c| c.display()).unwrap_or_else(|| config.quake_hotkey.clone());
             if st.quake_capture {
-                ui.label(RichText::new("⌨ Appuyez sur la combinaison voulue… (Échap pour annuler)").color(Color32::from_rgb(120, 200, 255)));
+                ui.label(RichText::new(t("⌨ Appuyez sur la combinaison voulue… (Échap pour annuler)")).color(Color32::from_rgb(120, 200, 255)));
             } else {
                 ui.label(RichText::new(current).monospace().strong());
-                if ui.button("⌨ Définir au clavier").on_hover_text("Cliquez puis appuyez sur la touche ou la combinaison").clicked() {
+                if ui.button(t("⌨ Définir au clavier")).on_hover_text(t("Cliquez puis appuyez sur la touche ou la combinaison")).clicked() {
                     st.quake_capture = true;
                     st.quake_note = None;
                 }
-                if ui.button("Appliquer").on_hover_text("Recréer le raccourci du bureau avec cette touche").clicked() {
+                if ui.button(t("Appliquer")).on_hover_text(t("Recréer le raccourci du bureau avec cette touche")).clicked() {
                     out.install_quake_shortcut = true;
                 }
             }
@@ -1102,29 +1099,25 @@ fn page_quake(ui: &mut egui::Ui, config: &mut Config, st: &mut SettingsUi, out: 
                 let (txt, color) = if s.legacy {
                     ("⚠ Ancien raccourci (v0.0.1) : cliquez sur « Appliquer » pour le réparer.".to_string(), Color32::from_rgb(230, 180, 90))
                 } else if s.program_ok {
-                    (format!("✔ Actif dans le bureau : {}", s.keys), Color32::from_rgb(110, 200, 120))
+                    (crate::i18n::tf("✔ Actif dans le bureau : {}", &[&s.keys]), Color32::from_rgb(110, 200, 120))
                 } else {
                     (
-                        format!(
-                            "✖ {} pointe vers un programme introuvable ({}) : cliquez sur « Appliquer ».",
-                            s.keys,
-                            s.program.as_ref().map(|p| p.display().to_string()).unwrap_or_default()
-                        ),
+                        crate::i18n::tf("✖ {} pointe vers un programme introuvable ({}) : cliquez sur « Appliquer ».", &[&s.keys, &s.program.as_ref().map(|p| p.display().to_string()).unwrap_or_default()]),
                         Color32::from_rgb(230, 110, 110),
                     )
                 };
                 ui.label(RichText::new(txt).color(color));
                 ui.horizontal(|ui| {
-                    if ui.small_button("Supprimer le raccourci du bureau").clicked() {
+                    if ui.small_button(t("Supprimer le raccourci du bureau")).clicked() {
                         out.remove_quake_shortcut = true;
                     }
-                    if ui.small_button("Actualiser l'état").clicked() {
+                    if ui.small_button(t("Actualiser l'état")).clicked() {
                         st.quake_status = None;
                     }
                 });
             }
             None => {
-                ui.label(RichText::new("Aucun raccourci créé pour l'instant.").color(Color32::GRAY));
+                ui.label(RichText::new(t("Aucun raccourci créé pour l'instant.")).color(Color32::GRAY));
             }
         }
         if let Some(n) = &st.quake_note {
@@ -1135,7 +1128,7 @@ fn page_quake(ui: &mut egui::Ui, config: &mut Config, st: &mut SettingsUi, out: 
             "Cinnamon et GNOME sont configurés automatiquement ; changer de touche remplace l'ancienne. \
              Ailleurs : liez la commande « novaterm --toggle » à une touche.",
         );
-        if ui.button("Essayer maintenant").clicked() {
+        if ui.button(t("Essayer maintenant")).clicked() {
             out.action = Some(Action::QuickTerminal);
         }
     });
@@ -1143,7 +1136,7 @@ fn page_quake(ui: &mut egui::Ui, config: &mut Config, st: &mut SettingsUi, out: 
 
 fn page_snippets(ui: &mut egui::Ui, config: &mut Config, bindings: &Bindings, out: &mut SettingsOut) {
     ui.horizontal(|ui| {
-        if ui.button(RichText::new("+ Nouveau snippet").strong()).clicked() {
+        if ui.button(RichText::new(t("+ Nouveau snippet")).strong()).clicked() {
             config.snippets.push(Snippet { name: String::new(), command: String::new(), run: false });
         }
         hint(
@@ -1157,8 +1150,8 @@ fn page_snippets(ui: &mut egui::Ui, config: &mut Config, bindings: &Bindings, ou
     });
     ui.add_space(8.0);
     if config.snippets.is_empty() {
-        card(ui, "Aucun snippet", |ui| {
-            ui.label("Ajoutez vos commandes fréquentes (déploiement, logs, docker…) pour les lancer en deux touches.");
+        card(ui, t("Aucun snippet"), |ui| {
+            ui.label(t("Ajoutez vos commandes fréquentes (déploiement, logs, docker…) pour les lancer en deux touches."));
         });
     }
     enum Op {
@@ -1184,26 +1177,26 @@ fn page_snippets(ui: &mut egui::Ui, config: &mut Config, bindings: &Bindings, ou
                     let buttons_w = 230.0;
                     ui.add(
                         egui::TextEdit::singleline(&mut sn.name)
-                            .hint_text("Nom affiché dans la palette (ex. Logs du serveur)")
+                            .hint_text(t("Nom affiché dans la palette (ex. Logs du serveur)"))
                             .font(egui::TextStyle::Body)
                             .desired_width((ui.available_width() - buttons_w).max(120.0)),
                     );
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        if ui.small_button("✕").on_hover_text("Supprimer").clicked() {
+                        if ui.small_button("✕").on_hover_text(t("Supprimer")).clicked() {
                             op = Some(Op::Del(i));
                         }
-                        if ui.small_button("⧉").on_hover_text("Dupliquer").clicked() {
+                        if ui.small_button("⧉").on_hover_text(t("Dupliquer")).clicked() {
                             op = Some(Op::Dup(i));
                         }
-                        if ui.add_enabled(i + 1 < n, egui::Button::new("▼").small()).on_hover_text("Descendre").clicked() {
+                        if ui.add_enabled(i + 1 < n, egui::Button::new("▼").small()).on_hover_text(t("Descendre")).clicked() {
                             op = Some(Op::Down(i));
                         }
-                        if ui.add_enabled(i > 0, egui::Button::new("▲").small()).on_hover_text("Monter").clicked() {
+                        if ui.add_enabled(i > 0, egui::Button::new("▲").small()).on_hover_text(t("Monter")).clicked() {
                             op = Some(Op::Up(i));
                         }
                         if ui
-                            .add_enabled(!sn.command.trim().is_empty(), egui::Button::new("▶ Tester").small())
-                            .on_hover_text("Lancer dans le panneau actif")
+                            .add_enabled(!sn.command.trim().is_empty(), egui::Button::new(t("▶ Tester")).small())
+                            .on_hover_text(t("Lancer dans le panneau actif"))
                             .clicked()
                         {
                             out.run_snippet = Some(i);
@@ -1214,11 +1207,11 @@ fn page_snippets(ui: &mut egui::Ui, config: &mut Config, bindings: &Bindings, ou
                 ui.add(
                     egui::TextEdit::multiline(&mut sn.command)
                         .font(egui::TextStyle::Monospace)
-                        .hint_text("Commande (ex. docker compose logs -f --tail 100)")
+                        .hint_text(t("Commande (ex. docker compose logs -f --tail 100)"))
                         .desired_rows(rows)
                         .desired_width(f32::INFINITY),
                 );
-                ui.checkbox(&mut sn.run, "Exécuter directement (sinon la commande est seulement insérée, à valider avec Entrée)");
+                ui.checkbox(&mut sn.run, t("Exécuter directement (sinon la commande est seulement insérée, à valider avec Entrée)"));
             });
     }
     match op {
@@ -1237,62 +1230,62 @@ fn page_snippets(ui: &mut egui::Ui, config: &mut Config, bindings: &Bindings, ou
 }
 
 fn page_advanced(ui: &mut egui::Ui, config: &mut Config, st: &mut SettingsUi, out: &mut SettingsOut) {
-    card(ui, "Dépannage", |ui| {
+    card(ui, t("Dépannage"), |ui| {
         hint(
             ui,
             "Si une police ou un réglage empêche NovaTerm de démarrer, il repasse tout seul en mode sans échec. \
              Vous pouvez aussi lancer : novaterm --safe-mode  ou  novaterm --reset-config",
         );
-        if ui.button("Revenir à la police intégrée").clicked() {
+        if ui.button(t("Revenir à la police intégrée")).clicked() {
             config.font_family.clear();
         }
-        if ui.button("Ouvrir config.toml dans l'éditeur").clicked() {
+        if ui.button(t("Ouvrir config.toml dans l'éditeur")).clicked() {
             out.action = Some(Action::OpenConfig);
         }
-        if ui.button("Recharger la configuration depuis le fichier").clicked() {
+        if ui.button(t("Recharger la configuration depuis le fichier")).clicked() {
             out.action = Some(Action::ReloadConfig);
         }
     });
     if let Some(app) = crate::appimage::current() {
-        card(ui, "AppImage", |ui| {
+        card(ui, t("AppImage"), |ui| {
             ui.label(format!("Fichier : {}", app.display()));
             let integrated = crate::appimage::is_integrated(&app);
-            ui.label(if integrated { "✔ Présent dans le menu des applications." } else { "Pas encore dans le menu des applications." });
+            ui.label(if integrated { t("✔ Présent dans le menu des applications.") } else { t("Pas encore dans le menu des applications.") });
             ui.horizontal_wrapped(|ui| {
-                if ui.button("Ranger dans ~/Applications et ajouter au menu").clicked() {
+                if ui.button(t("Ranger dans ~/Applications et ajouter au menu")).clicked() {
                     st.appimage_note = Some(match crate::appimage::integrate(true) {
                         Ok(p) => format!("Fait : {}", p.display()),
                         Err(e) => e,
                     });
                 }
-                if ui.button("Ajouter au menu sans déplacer").clicked() {
+                if ui.button(t("Ajouter au menu sans déplacer")).clicked() {
                     st.appimage_note = Some(crate::appimage::integrate(false).map(|_| "Fait.".to_string()).unwrap_or_else(|e| e));
                 }
-                if integrated && ui.button("Retirer du menu").clicked() {
-                    st.appimage_note = Some(crate::appimage::unintegrate().map(|_| "Retiré du menu.".to_string()).unwrap_or_else(|e| e));
+                if integrated && ui.button(t("Retirer du menu")).clicked() {
+                    st.appimage_note = Some(crate::appimage::unintegrate().map(|_| t("Retiré du menu.").to_string()).unwrap_or_else(|e| e));
                 }
             });
-            ui.checkbox(&mut config.appimage_prompt, "Proposer l'ajout au menu au démarrage");
+            ui.checkbox(&mut config.appimage_prompt, t("Proposer l'ajout au menu au démarrage"));
             if let Some(n) = &st.appimage_note {
                 ui.label(RichText::new(n).color(Color32::from_rgb(230, 180, 90)));
             }
         });
     }
-    card(ui, "Mises à jour", |ui| {
-        ui.label(format!("Version installée : {}", env!("CARGO_PKG_VERSION")));
-        ui.checkbox(&mut config.update_check, "Vérifier automatiquement les nouvelles versions (au démarrage, puis toutes les 6 h)");
-        ui.checkbox(&mut config.update_prerelease, "Proposer aussi les versions bêta");
-        hint(ui, "Seule la page publique des versions de GitHub est consultée ; rien d'autre n'est envoyé. L'AppImage se met à jour en un clic (fichier vérifié par SHA-256).");
+    card(ui, t("Mises à jour"), |ui| {
+        ui.label(crate::i18n::tf("Version installée : {}", &[&env!("CARGO_PKG_VERSION")]));
+        ui.checkbox(&mut config.update_check, t("Vérifier automatiquement les nouvelles versions (au démarrage, puis toutes les 6 h)"));
+        ui.checkbox(&mut config.update_prerelease, t("Proposer aussi les versions bêta"));
+        hint(ui, t("Seule la page publique des versions de GitHub est consultée ; rien d'autre n'est envoyé. L'AppImage se met à jour en un clic (fichier vérifié par SHA-256)."));
         ui.horizontal(|ui| {
-            if ui.button("Rechercher maintenant").clicked() {
+            if ui.button(t("Rechercher maintenant")).clicked() {
                 out.action = Some(Action::CheckUpdates);
             }
-            if !config.update_skip.is_empty() && ui.small_button(format!("Ne plus ignorer la {}", config.update_skip)).clicked() {
+            if !config.update_skip.is_empty() && ui.small_button(crate::i18n::tf("Ne plus ignorer la {}", &[&config.update_skip])).clicked() {
                 config.update_skip.clear();
             }
         });
     });
-    card(ui, "Informations", |ui| {
+    card(ui, t("Informations"), |ui| {
         ui.label(format!("NovaTerm {} · {} {}", env!("CARGO_PKG_VERSION"), std::env::consts::OS, std::env::consts::ARCH));
         ui.label(format!("Shell : {}", if config.shell.is_empty() { platform::default_shell() } else { config.shell.clone() }));
     });
@@ -1309,10 +1302,7 @@ fn apply_captured(config: &mut Config, st: &mut SettingsUi, bindings: &Bindings)
                 | Key::F11 | Key::F12 | Key::PageUp | Key::PageDown | Key::Insert | Key::Home | Key::End
         );
     if printable_alone {
-        st.note = Some(format!(
-            "« {} » refusé : sans Ctrl ni Alt, cette touche ne pourrait plus être tapée dans le terminal.",
-            combo.display()
-        ));
+        st.note = Some(crate::i18n::tf("« {} » refusé : sans Ctrl ni Alt, cette touche ne pourrait plus être tapée dans le terminal.", &[&combo.display()]));
         return;
     }
     for other in bindings.conflicts(&combo, action) {
@@ -1322,7 +1312,7 @@ fn apply_captured(config: &mut Config, st: &mut SettingsUi, bindings: &Bindings)
             .map(|c| c.to_config_string())
             .collect();
         config.keybindings.insert(other.id().to_string(), list);
-        st.note = Some(format!("{} retiré de « {} ».", combo.display(), other.label()));
+        st.note = Some(crate::i18n::tf("{} retiré de « {} ».", &[&combo.display(), &other.label()]));
     }
     let mut list: Vec<String> = bindings.map[&action].iter().map(|c| c.to_config_string()).collect();
     let s = combo.to_config_string();
@@ -1333,12 +1323,12 @@ fn apply_captured(config: &mut Config, st: &mut SettingsUi, bindings: &Bindings)
 }
 
 fn page_shortcuts(ui: &mut egui::Ui, config: &mut Config, st: &mut SettingsUi, bindings: &Bindings) {
-    card(ui, "Raccourcis clavier", |ui| {
-        hint(ui, "« + » puis appuyez sur la combinaison voulue (Échap pour annuler). « × » retire un raccourci.");
+    card(ui, t("Raccourcis clavier"), |ui| {
+        hint(ui, t("« + » puis appuyez sur la combinaison voulue (Échap pour annuler). « × » retire un raccourci."));
         ui.horizontal(|ui| {
-            ui.label("Filtrer");
-            ui.add(egui::TextEdit::singleline(&mut st.shortcut_filter).desired_width(200.0).hint_text("ex. onglet, split…"));
-            if ui.button("Tout réinitialiser").clicked() {
+            ui.label(t("Filtrer"));
+            ui.add(egui::TextEdit::singleline(&mut st.shortcut_filter).desired_width(200.0).hint_text(t("ex. onglet, split…")));
+            if ui.button(t("Tout réinitialiser")).clicked() {
                 config.keybindings.clear();
                 st.note = Some("Raccourcis par défaut restaurés.".into());
             }
@@ -1372,7 +1362,7 @@ fn page_shortcuts(ui: &mut egui::Ui, config: &mut Config, st: &mut SettingsUi, b
                                 ui.horizontal(|ui| {
                                     ui.spacing_mut().item_spacing.x = 2.0;
                                     ui.label(RichText::new(c.display()).monospace());
-                                    if ui.small_button("×").on_hover_text("Retirer").clicked() {
+                                    if ui.small_button("×").on_hover_text(t("Retirer")).clicked() {
                                         remove = Some(i);
                                     }
                                 });
@@ -1391,12 +1381,12 @@ fn page_shortcuts(ui: &mut egui::Ui, config: &mut Config, st: &mut SettingsUi, b
                         config.keybindings.insert(a.id().to_string(), list);
                     }
                     if st.capture == Some(a) {
-                        ui.label(RichText::new("Appuyez sur une combinaison…").color(Color32::from_rgb(120, 200, 255)));
-                    } else if ui.small_button("+").on_hover_text("Ajouter un raccourci").clicked() {
+                        ui.label(RichText::new(t("Appuyez sur une combinaison…")).color(Color32::from_rgb(120, 200, 255)));
+                    } else if ui.small_button("+").on_hover_text(t("Ajouter un raccourci")).clicked() {
                         st.capture = Some(a);
                         st.note = None;
                     }
-                    if config.keybindings.contains_key(a.id()) && ui.small_button("↺").on_hover_text("Par défaut").clicked() {
+                    if config.keybindings.contains_key(a.id()) && ui.small_button("↺").on_hover_text(t("Par défaut")).clicked() {
                         config.keybindings.remove(a.id());
                     }
                 });
@@ -1409,7 +1399,7 @@ fn page_shortcuts(ui: &mut egui::Ui, config: &mut Config, st: &mut SettingsUi, b
 /// Aide : tous les raccourcis, groupés et filtrables. Un clic exécute l'action.
 pub fn show_help(ctx: &egui::Context, open: &mut bool, bindings: &Bindings, filter: &mut String, run: &mut Option<Action>) {
     let screen = ctx.screen_rect();
-    egui::Window::new("Raccourcis clavier")
+    egui::Window::new(t("Raccourcis clavier"))
         .open(open)
         .resizable(true)
         .collapsible(false)
@@ -1418,9 +1408,9 @@ pub fn show_help(ctx: &egui::Context, open: &mut bool, bindings: &Bindings, filt
         .show(ctx, |ui| {
             ui.horizontal(|ui| {
                 ui.label("🔍");
-                ui.add(egui::TextEdit::singleline(filter).desired_width(240.0).hint_text("Filtrer…"));
+                ui.add(egui::TextEdit::singleline(filter).desired_width(240.0).hint_text(t("Filtrer…")));
             });
-            hint(ui, "Cliquez sur une ligne pour exécuter l'action. Modifiables dans Paramètres → Raccourcis.");
+            hint(ui, t("Cliquez sur une ligne pour exécuter l'action. Modifiables dans Paramètres → Raccourcis."));
             ui.separator();
             let f = filter.to_lowercase();
             egui::ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
@@ -1450,7 +1440,7 @@ pub fn show_help(ctx: &egui::Context, open: &mut bool, bindings: &Bindings, filt
                     }
                 }
                 ui.add_space(8.0);
-                ui.label(RichText::new("Souris").strong().color(ui.visuals().hyperlink_color));
+                ui.label(RichText::new(t("Souris")).strong().color(ui.visuals().hyperlink_color));
                 for (k, d) in [
                     ("Double-clic / triple-clic", "Sélectionner un mot / une ligne"),
                     ("Alt + glisser", "Sélection rectangulaire"),
@@ -1462,8 +1452,8 @@ pub fn show_help(ctx: &egui::Context, open: &mut bool, bindings: &Bindings, filt
                     ("Double-clic / clic milieu sur un onglet", "Renommer / fermer"),
                 ] {
                     ui.horizontal(|ui| {
-                        ui.add_sized([230.0, 18.0], egui::Label::new(d).truncate());
-                        ui.label(RichText::new(k).monospace().strong());
+                        ui.add_sized([230.0, 18.0], egui::Label::new(crate::i18n::tr(d)).truncate());
+                        ui.label(RichText::new(crate::i18n::tr(k)).monospace().strong());
                     });
                 }
             });
@@ -1510,12 +1500,12 @@ pub fn show_file_picker(
             .default_height(420.0)
             .show(ctx, |ui| {
                 ui.horizontal(|ui| {
-                    if ui.button("⬆ Dossier parent").clicked() {
+                    if ui.button(t("⬆ Dossier parent")).clicked() {
                         if let Some(parent) = b.dir.parent() {
                             b.dir = parent.to_path_buf();
                         }
                     }
-                    if ui.button("🏠").on_hover_text("Dossier personnel").clicked() {
+                    if ui.button("🏠").on_hover_text(t("Dossier personnel")).clicked() {
                         if let Some(h) = dirs::home_dir() {
                             b.dir = h;
                         }
@@ -1575,19 +1565,19 @@ pub fn show_file_browser(ctx: &egui::Context, browser: &mut Option<FileBrowser>,
     let mut close = false;
     let mut still_open = browser.is_some();
     if let Some(b) = browser {
-        egui::Window::new("Choisir une image de fond")
+        egui::Window::new(t("Choisir une image de fond"))
             .open(&mut still_open)
             .resizable(true)
             .default_width(460.0)
             .default_height(420.0)
             .show(ctx, |ui| {
                 ui.horizontal(|ui| {
-                    if ui.button("⬆ Dossier parent").clicked() {
+                    if ui.button(t("⬆ Dossier parent")).clicked() {
                         if let Some(parent) = b.dir.parent() {
                             b.dir = parent.to_path_buf();
                         }
                     }
-                    if ui.button("🏠").on_hover_text("Dossier personnel").clicked() {
+                    if ui.button("🏠").on_hover_text(t("Dossier personnel")).clicked() {
                         if let Some(h) = dirs::home_dir() {
                             b.dir = h;
                         }

@@ -4,6 +4,7 @@
 //! ou Entrée ne déplacent jamais le focus vers un bouton de l'interface (ce qui pouvait
 //! fermer la fenêtre), et Ctrl+C / Ctrl+V / Ctrl+X arrivent bien au programme.
 
+use crate::i18n::t;
 use std::collections::{BTreeMap, HashMap};
 use std::path::PathBuf;
 use std::sync::mpsc::Receiver;
@@ -483,7 +484,7 @@ impl NovaApp {
         let mut font_error = None;
         if let Err(e) = fonts::install(&ctx, &config.font_family, font_catalog.as_ref()) {
             // Police introuvable ou invalide : on revient à la police intégrée.
-            font_error = Some(format!("{e} : police intégrée utilisée."));
+            font_error = Some(crate::i18n::tf("{} : police intégrée utilisée.", &[&e]));
             config.font_family.clear();
             config.save();
         }
@@ -732,7 +733,7 @@ impl NovaApp {
         let first = self.tabs.len();
         if self.open_tabs(&p.tabs) > 0 {
             self.active = first;
-            self.toast(format!("Profil « {} » ouvert", p.name));
+            self.toast(crate::i18n::tf("Profil « {} » ouvert", &[&p.name]));
         }
     }
 
@@ -743,7 +744,7 @@ impl NovaApp {
                 true
             }
             None => {
-                self.toast(format!("Profil « {name} » introuvable"));
+                self.toast(crate::i18n::tf("Profil « {} » introuvable", &[&name]));
                 false
             }
         }
@@ -761,7 +762,7 @@ impl NovaApp {
             None => self.config.profiles.push(profile),
         }
         self.config_dirty = true;
-        self.toast(format!("Profil « {name} » enregistré (Paramètres → Session pour les commandes)"));
+        self.toast(crate::i18n::tf("Profil « {} » enregistré (Paramètres → Session pour les commandes)", &[&name]));
     }
 
     // ------------------------------------------------------------------
@@ -806,12 +807,12 @@ impl NovaApp {
 
     fn copy_block_output(&mut self, pane_id: u64, block: u32) {
         let Some(text) = self.panes.get(&pane_id).and_then(|p| p.block_output(block)) else {
-            self.toast("Sortie introuvable (effacée de l'historique)");
+            self.toast(t("Sortie introuvable (effacée de l'historique)"));
             return;
         };
         let lines = text.lines().count();
         self.ctx.copy_text(text);
-        self.toast(format!("Sortie copiée ({lines} lignes)"));
+        self.toast(crate::i18n::tf("Sortie copiée ({} lignes)", &[&lines]));
     }
 
     fn block_command(&self, pane_id: u64, block: u32) -> Option<String> {
@@ -852,7 +853,7 @@ impl NovaApp {
                 let long = f.duration.as_secs() >= self.config.notify_threshold_secs as u64;
                 let away = !window_focused || !visible;
                 if self.config.notify_long_commands && long && (away || !self.config.notify_only_unfocused) {
-                    let title = if ok { "✔ Commande terminée".to_string() } else { format!("✖ Échec (code {})", f.exit) };
+                    let title = if ok { t("✔ Commande terminée").to_string() } else { crate::i18n::tf("✖ Échec (code {})", &[&f.exit]) };
                     let cmd: String = f.command.chars().take(80).collect();
                     notes.push((title, format!("{cmd} — {}", fmt_duration(f.duration)), true));
                 }
@@ -1071,7 +1072,7 @@ impl NovaApp {
             }
             Err(e) => {
                 eprintln!("NovaTerm: impossible de lancer le shell: {e}");
-                self.toast(format!("Échec du lancement du shell : {e}"));
+                self.toast(crate::i18n::tf("Échec du lancement du shell : {}", &[&e]));
                 None
             }
         }
@@ -1084,9 +1085,9 @@ impl NovaApp {
         match Pane::spawn(cols, rows, &self.config, cwd, self.ctx.clone()) {
             Ok(pane) => {
                 self.panes.insert(id, pane);
-                self.toast("Shell relancé");
+                self.toast(t("Shell relancé"));
             }
-            Err(e) => self.toast(format!("Échec du lancement du shell : {e}")),
+            Err(e) => self.toast(crate::i18n::tf("Échec du lancement du shell : {}", &[&e])),
         }
     }
 
@@ -1096,7 +1097,7 @@ impl NovaApp {
             self.tabs.push(Tab::new(id));
             self.active = self.tabs.len() - 1;
             if self.tabs.len() > 1 {
-                self.toast("Nouvel onglet");
+                self.toast(t("Nouvel onglet"));
             }
         }
     }
@@ -1110,7 +1111,7 @@ impl NovaApp {
             tab.tree.split(focused, dir, new_id);
             tab.focused = new_id;
             tab.zoomed = None;
-            self.toast("Panneau divisé");
+            self.toast(t("Panneau divisé"));
         }
     }
 
@@ -1160,25 +1161,22 @@ impl NovaApp {
         let (title, message, button) = match &kind {
             ConfirmKind::CloseWindow => (
                 "Quitter NovaTerm ?",
-                format!("Des programmes sont encore en cours : {list}.\nIls seront arrêtés."),
+                crate::i18n::tf("Des programmes sont encore en cours : {}.\nIls seront arrêtés.", &[&list]),
                 "Quitter",
             ),
             ConfirmKind::CloseTab(_) => (
                 "Fermer l'onglet ?",
-                format!("Des programmes sont encore en cours : {list}.\nIls seront arrêtés."),
+                crate::i18n::tf("Des programmes sont encore en cours : {}.\nIls seront arrêtés.", &[&list]),
                 "Fermer l'onglet",
             ),
             ConfirmKind::ClosePane(_) => (
                 "Fermer le panneau ?",
-                format!("« {list} » est encore en cours d'exécution.\nIl sera arrêté."),
-                "Fermer",
+                crate::i18n::tf("« {} » est encore en cours d'exécution.\nIl sera arrêté.", &[&list]),
+                t("Fermer"),
             ),
             ConfirmKind::Paste(text) => (
                 "Coller plusieurs lignes ?",
-                format!(
-                    "Le texte contient {} lignes : chaque ligne peut être exécutée comme une commande.",
-                    text.lines().count()
-                ),
+                crate::i18n::tf("Le texte contient {} lignes : chaque ligne peut être exécutée comme une commande.", &[&text.lines().count()]),
                 "Coller",
             ),
         };
@@ -1327,10 +1325,10 @@ impl NovaApp {
         }
         if tab.zoomed == Some(focused) {
             tab.zoomed = None;
-            self.toast("Zoom désactivé");
+            self.toast(t("Zoom désactivé"));
         } else {
             tab.zoomed = Some(focused);
-            self.toast("Panneau zoomé");
+            self.toast(t("Panneau zoomé"));
         }
     }
 
@@ -1347,7 +1345,7 @@ impl NovaApp {
         }
         self.tabs.insert(self.active + 1, Tab::new(id));
         self.active += 1;
-        self.toast("Panneau déplacé dans un nouvel onglet");
+        self.toast(t("Panneau déplacé dans un nouvel onglet"));
     }
 
     // ------------------------------------------------------------------
@@ -1363,7 +1361,7 @@ impl NovaApp {
         if let Some(text) = self.selection_text() {
             set_primary_selection(&text);
             self.ctx.copy_text(text);
-            self.toast("Copié dans le presse-papiers");
+            self.toast(t("Copié dans le presse-papiers"));
             true
         } else {
             false
@@ -1496,7 +1494,7 @@ impl NovaApp {
     fn zoom_font(&mut self, delta: f32) {
         self.config.font_size = (self.config.font_size + delta).clamp(6.0, 48.0);
         self.config_dirty = true;
-        self.toast(format!("Police : {:.0} px", self.config.font_size));
+        self.toast(crate::i18n::tf("Police : {} px", &[&format!("{:.0}", self.config.font_size)]));
     }
 
     fn clear_egui_focus(&self) {
@@ -1594,7 +1592,7 @@ impl NovaApp {
             EqualizeSplits => {
                 if let Some(tab) = self.tabs.get_mut(self.active) {
                     tab.tree.equalize();
-                    self.toast("Panneaux égalisés");
+                    self.toast(t("Panneaux égalisés"));
                 }
             }
             ToggleZoom => self.toggle_zoom(),
@@ -1611,13 +1609,13 @@ impl NovaApp {
             Clear => {
                 if let Some(pane) = self.focused_id().and_then(|id| self.panes.get_mut(&id)) {
                     pane.clear_all();
-                    self.toast("Écran effacé");
+                    self.toast(t("Écran effacé"));
                 }
             }
             ResetTerminal => {
                 if let Some(pane) = self.focused_id().and_then(|id| self.panes.get_mut(&id)) {
                     pane.reset();
-                    self.toast("Terminal réinitialisé");
+                    self.toast(t("Terminal réinitialisé"));
                 }
             }
             ScrollLineUp => self.scroll_focused(Scroll::Delta(1)),
@@ -1631,7 +1629,7 @@ impl NovaApp {
             FontReset => {
                 self.config.font_size = Config::default().font_size;
                 self.config_dirty = true;
-                self.toast("Police réinitialisée");
+                self.toast(t("Police réinitialisée"));
             }
             NewWindow => self.new_window(),
             Fullscreen => self.toggle_fullscreen(),
@@ -1642,7 +1640,7 @@ impl NovaApp {
             ToggleAlwaysOnTop => {
                 self.config.always_on_top = !self.config.always_on_top;
                 self.config_dirty = true;
-                self.toast(if self.config.always_on_top { "Toujours au premier plan" } else { "Premier plan désactivé" });
+                self.toast(if self.config.always_on_top { t("Toujours au premier plan") } else { t("Premier plan désactivé") });
             }
             ToggleTabBar => {
                 self.config.show_tab_bar = !self.config.show_tab_bar;
@@ -1657,7 +1655,7 @@ impl NovaApp {
                 let d = if action == OpacityUp { 0.05 } else { -0.05 };
                 self.config.opacity = (self.config.opacity + d).clamp(0.15, 1.0);
                 self.config_dirty = true;
-                self.toast(format!("Opacité : {:.0} %", self.config.opacity * 100.0));
+                self.toast(crate::i18n::tf("Opacité : {} %", &[&format!("{:.0}", self.config.opacity * 100.0)]));
             }
             CommandPalette => {
                 if self.palette.take().is_none() {
@@ -1676,7 +1674,7 @@ impl NovaApp {
             }
             ReloadConfig => {
                 self.config = Config::load();
-                self.toast("Configuration rechargée");
+                self.toast(t("Configuration rechargée"));
             }
             Quit => self.request_quit(),
             HistorySearch => {
@@ -1697,13 +1695,13 @@ impl NovaApp {
                 });
                 match found {
                     Some((pid, fix)) => self.insert_command(pid, &fix, false),
-                    None => self.toast("Aucune correction proposée pour la dernière commande"),
+                    None => self.toast(t("Aucune correction proposée pour la dernière commande")),
                 }
             }
             CheckUpdates => self.start_update_check(true),
             ExplainCommand => {
                 if !self.config.help_explain {
-                    self.toast("« Expliquer la commande » est désactivé (Paramètres → Aides)");
+                    self.toast(t("« Expliquer la commande » est désactivé (Paramètres → Aides)"));
                 } else {
                     let target = self
                         .selection_text()
@@ -1713,7 +1711,7 @@ impl NovaApp {
                         .or_else(|| self.last_block().and_then(|(p, b)| self.block_command(p, b)));
                     match target {
                         Some(cmd) => self.start_explain(cmd),
-                        None => self.toast("Rien à expliquer : tapez ou sélectionnez une commande"),
+                        None => self.toast(t("Rien à expliquer : tapez ou sélectionnez une commande")),
                     }
                 }
             }
@@ -1721,12 +1719,12 @@ impl NovaApp {
             NextCommand => self.jump_command(false),
             CopyLastOutput => match self.last_block() {
                 Some((p, b)) => self.copy_block_output(p, b),
-                None => self.toast("Aucune commande (intégration shell inactive ?)"),
+                None => self.toast(t("Aucune commande (intégration shell inactive ?)")),
             },
             CopyLastCommand => {
                 if let Some(cmd) = self.last_block().and_then(|(p, b)| self.block_command(p, b)) {
                     self.ctx.copy_text(cmd);
-                    self.toast("Commande copiée");
+                    self.toast(t("Commande copiée"));
                 }
             }
             RerunLast => {
@@ -1740,7 +1738,7 @@ impl NovaApp {
                 if let Some(tab) = self.tabs.get_mut(self.active) {
                     tab.broadcast = !tab.broadcast;
                     let on = tab.broadcast;
-                    self.toast(if on { "📡 Diffusion activée : le clavier va à tous les panneaux" } else { "Diffusion désactivée" });
+                    self.toast(if on { t("📡 Diffusion activée : le clavier va à tous les panneaux") } else { t("Diffusion désactivée") });
                 }
             }
             Snippets => self.open_palette(PaletteMode::Snippets),
@@ -1758,7 +1756,7 @@ impl NovaApp {
             ToggleSuggestions => {
                 self.config.suggestions = !self.config.suggestions;
                 self.config_dirty = true;
-                self.toast(if self.config.suggestions { "Suggestions activées" } else { "Suggestions désactivées" });
+                self.toast(if self.config.suggestions { t("Suggestions activées") } else { t("Suggestions désactivées") });
             }
         }
     }
@@ -2132,7 +2130,7 @@ impl NovaApp {
             }
         }
         let hint = Rect::from_min_size(Pos2::new(x + 10.0, y + 4.0 + items.len() as f32 * row_h), Vec2::new(w - 20.0, row_h));
-        lp.text(hint.left_center(), egui::Align2::LEFT_CENTER, "→ accepter   Ctrl+→ un mot   Ctrl+↑↓ choisir", egui::FontId::proportional(11.0), fgc.gamma_multiply(0.5));
+        lp.text(hint.left_center(), egui::Align2::LEFT_CENTER, t("→ accepter   Ctrl+→ un mot   Ctrl+↑↓ choisir"), egui::FontId::proportional(11.0), fgc.gamma_multiply(0.5));
     }
 
     /// Décorations des blocs d'un panneau ; retourne l'action cliquée.
@@ -2207,19 +2205,19 @@ impl NovaApp {
                                     };
                                     ui.label(egui::RichText::new(status).small().color(color));
                                     let b = |ui: &mut egui::Ui, t: &str, tip: &str| ui.small_button(t).on_hover_text(tip).clicked();
-                                    if b(ui, "📋 cmd", "Copier la commande") {
+                                    if b(ui, "📋 cmd", t("Copier la commande")) {
                                         action = Some((id, vb.id, BlockAct::CopyCommand));
                                     }
-                                    if b(ui, "📋 sortie", "Copier la sortie") {
+                                    if b(ui, "📋 sortie", t("Copier la sortie")) {
                                         action = Some((id, vb.id, BlockAct::CopyOutput));
                                     }
-                                    if self.config.help_explain && b(ui, "?", "Expliquer la commande (hors ligne)") {
+                                    if self.config.help_explain && b(ui, "?", t("Expliquer la commande (hors ligne)")) {
                                         action = Some((id, vb.id, BlockAct::Explain));
                                     }
-                                    if b(ui, "↻", "Relancer la commande") {
+                                    if b(ui, "↻", t("Relancer la commande")) {
                                         action = Some((id, vb.id, BlockAct::Rerun));
                                     }
-                                    if b(ui, "⬆", "Remonter au début de la commande") {
+                                    if b(ui, "⬆", t("Remonter au début de la commande")) {
                                         action = Some((id, vb.id, BlockAct::ScrollTop));
                                     }
                                 });
@@ -2288,7 +2286,7 @@ impl NovaApp {
         });
         self.update_rx = Some(rx);
         if manual {
-            self.toast("Recherche d'une mise à jour…");
+            self.toast(t("Recherche d'une mise à jour…"));
         }
     }
 
@@ -2307,12 +2305,12 @@ impl NovaApp {
                     }
                     Ok(_) => {
                         if self.update_manual {
-                            self.toast(format!("NovaTerm {} est à jour ✔", env!("CARGO_PKG_VERSION")));
+                            self.toast(crate::i18n::tf("NovaTerm {} est à jour ✔", &[&env!("CARGO_PKG_VERSION")]));
                         }
                     }
                     Err(e) => {
                         if self.update_manual {
-                            self.toast(format!("Mise à jour : {e}"));
+                            self.toast(crate::i18n::tf("Mise à jour : {}", &[&e]));
                         }
                     }
                 }
@@ -2326,7 +2324,7 @@ impl NovaApp {
                         self.update_ready = Some(path);
                         self.update_info = None;
                     }
-                    Err(e) => self.toast(format!("Mise à jour échouée : {e}")),
+                    Err(e) => self.toast(crate::i18n::tf("Mise à jour échouée : {}", &[&e])),
                 }
             }
         }
@@ -2343,8 +2341,8 @@ impl NovaApp {
             let mut restart = false;
             egui::TopBottomPanel::top("update_ready").frame(egui::Frame::NONE.fill(rgb(self.theme.ansi[2]).gamma_multiply(0.22)).inner_margin(egui::Margin::symmetric(10, 6))).show(ctx, |ui| {
                 ui.horizontal_wrapped(|ui| {
-                    ui.label(egui::RichText::new("✔ Mise à jour installée. Redémarrez NovaTerm pour l'utiliser (vos onglets sont restaurés).").color(fg));
-                    if ui.button("Redémarrer maintenant").clicked() {
+                    ui.label(egui::RichText::new(t("✔ Mise à jour installée. Redémarrez NovaTerm pour l'utiliser (vos onglets sont restaurés).")).color(fg));
+                    if ui.button(t("Redémarrer maintenant")).clicked() {
                         restart = true;
                     }
                 });
@@ -2367,28 +2365,28 @@ impl NovaApp {
         let mut choice = 0;
         egui::TopBottomPanel::top("update_banner").frame(egui::Frame::NONE.fill(accent.gamma_multiply(0.18)).inner_margin(egui::Margin::symmetric(10, 6))).show(ctx, |ui| {
             ui.horizontal_wrapped(|ui| {
-                let beta = if info.prerelease { " (bêta)" } else { "" };
-                ui.label(egui::RichText::new(format!("🎉 NovaTerm {}{beta} est disponible — vous avez {}.", info.version, env!("CARGO_PKG_VERSION"))).color(fg).strong());
+                let beta = if info.prerelease { t(" (bêta)") } else { "" };
+                ui.label(egui::RichText::new(crate::i18n::tf("🎉 NovaTerm {}{} est disponible — vous avez {}.", &[&info.version, &beta, &env!("CARGO_PKG_VERSION")])).color(fg).strong());
                 if busy {
                     ui.spinner();
-                    ui.label("Téléchargement et vérification…");
+                    ui.label(t("Téléchargement et vérification…"));
                 } else if appimage.is_some() {
-                    if ui.button("Mettre à jour maintenant").clicked() {
+                    if ui.button(t("Mettre à jour maintenant")).clicked() {
                         choice = 1;
                     }
                 } else {
                     ui.label(egui::RichText::new(crate::update::how_to_update(&info)).color(fg.gamma_multiply(0.8)));
-                    if ui.button("Télécharger").clicked() {
+                    if ui.button(t("Télécharger")).clicked() {
                         choice = 2;
                     }
                 }
-                if ui.small_button("Nouveautés").on_hover_text(info.notes.chars().take(400).collect::<String>()).clicked() {
+                if ui.small_button(t("Nouveautés")).on_hover_text(info.notes.chars().take(400).collect::<String>()).clicked() {
                     choice = 2;
                 }
-                if ui.small_button("Plus tard").clicked() {
+                if ui.small_button(t("Plus tard")).clicked() {
                     choice = 3;
                 }
-                if ui.small_button("Ignorer cette version").clicked() {
+                if ui.small_button(t("Ignorer cette version")).clicked() {
                     choice = 4;
                 }
             });
@@ -2436,7 +2434,7 @@ impl NovaApp {
         }
         let mut open = true;
         let mut example_cmd: Option<String> = None;
-        egui::Window::new("💡 Explication")
+        egui::Window::new(t("💡 Explication"))
             .open(&mut open)
             .collapsible(false)
             .resizable(true)
@@ -2445,7 +2443,7 @@ impl NovaApp {
                 None => {
                     ui.horizontal(|ui| {
                         ui.spinner();
-                        ui.label("Lecture des pages d'aide locales…");
+                        ui.label(t("Lecture des pages d'aide locales…"));
                     });
                 }
                 Some(ex) => {
@@ -2460,25 +2458,25 @@ impl NovaApp {
                     });
                     if !ex.examples.is_empty() {
                         ui.separator();
-                        ui.label(egui::RichText::new("Exemples (tldr)").strong());
+                        ui.label(egui::RichText::new(t("Exemples (tldr)")).strong());
                         egui::ScrollArea::vertical().max_height(220.0).show(ui, |ui| {
                             for line in ex.examples.lines() {
-                                let t = line.trim();
+                                let lt = line.trim();
                                 // Lignes de commande tldr : cliquables pour les insérer.
-                                if t.starts_with('$') || (line.starts_with("    ") && !t.ends_with(':')) {
-                                    let c = t.trim_start_matches('$').trim().to_string();
-                                    if ui.link(egui::RichText::new(&c).monospace()).on_hover_text("Insérer dans le terminal").clicked() {
+                                if lt.starts_with('$') || (line.starts_with("    ") && !lt.ends_with(':')) {
+                                    let c = lt.trim_start_matches('$').trim().to_string();
+                                    if ui.link(egui::RichText::new(&c).monospace()).on_hover_text(t("Insérer dans le terminal")).clicked() {
                                         example_cmd = Some(c);
                                     }
                                 } else {
-                                    ui.label(t);
+                                    ui.label(lt);
                                 }
                             }
                         });
                     } else {
-                        ui.label(egui::RichText::new("Astuce : installez « tldr » pour voir aussi des exemples (sudo apt install tldr).").small().color(Color32::GRAY));
+                        ui.label(egui::RichText::new(t("Astuce : installez « tldr » pour voir aussi des exemples (sudo apt install tldr).")).small().color(Color32::GRAY));
                     }
-                    ui.label(egui::RichText::new("Explication 100 % locale : pages man et tldr de votre système, sans IA ni Internet.").small().color(Color32::GRAY));
+                    ui.label(egui::RichText::new(t("Explication 100 % locale : pages man et tldr de votre système, sans IA ni Internet.")).small().color(Color32::GRAY));
                 }
             });
         if let Some(c) = example_cmd {
@@ -2500,24 +2498,24 @@ impl NovaApp {
         };
         let mut open = true;
         let mut insert: Option<String> = None;
-        egui::Window::new("💡 Astuces").open(&mut open).collapsible(false).resizable(false).default_width(480.0).show(ctx, |ui| {
-            for t in &tips {
-                ui.label(egui::RichText::new(&t.title).strong());
-                ui.add(egui::Label::new(&t.detail).wrap());
-                if let Some(fix) = &t.fix {
+        egui::Window::new(t("💡 Astuces")).open(&mut open).collapsible(false).resizable(false).default_width(480.0).show(ctx, |ui| {
+            for tip in &tips {
+                ui.label(egui::RichText::new(crate::i18n::tr(&tip.title)).strong());
+                ui.add(egui::Label::new(crate::i18n::tr(&tip.detail)).wrap());
+                if let Some(fix) = &tip.fix {
                     ui.horizontal(|ui| {
                         ui.label(egui::RichText::new(fix).monospace().color(rgb(self.theme.cursor)));
-                        if ui.small_button("Insérer").on_hover_text("Placer la commande sur la ligne, sans l'exécuter").clicked() {
+                        if ui.small_button(crate::i18n::t("Insérer")).on_hover_text(t("Placer la commande sur la ligne, sans l'exécuter")).clicked() {
                             insert = Some(fix.clone());
                         }
-                        if ui.small_button("📋").on_hover_text("Copier").clicked() {
+                        if ui.small_button("📋").on_hover_text(t("Copier")).clicked() {
                             ui.ctx().copy_text(fix.clone());
                         }
                     });
                 }
                 ui.add_space(8.0);
             }
-            ui.label(egui::RichText::new("Astuces locales, sans IA. Rien n'est exécuté sans vous.").small().color(Color32::GRAY));
+            ui.label(egui::RichText::new(t("Astuces locales, sans IA. Rien n'est exécuté sans vous.")).small().color(Color32::GRAY));
         });
         if let Some(fix) = insert {
             self.insert_command(pid, &fix, false);
@@ -2538,7 +2536,7 @@ impl NovaApp {
             BlockAct::CopyCommand => {
                 if let Some(cmd) = self.block_command(pane_id, block) {
                     self.ctx.copy_text(cmd);
-                    self.toast("Commande copiée");
+                    self.toast(t("Commande copiée"));
                 }
             }
             BlockAct::CopyOutput => self.copy_block_output(pane_id, block),
@@ -2590,7 +2588,7 @@ impl NovaApp {
                                 .id(history_input_id())
                                 .font(egui::TextStyle::Monospace)
                                 .desired_width(f32::INFINITY)
-                                .hint_text("Filtrer (plusieurs mots possibles)…"),
+                                .hint_text(t("Filtrer (plusieurs mots possibles)…")),
                         );
                         if focus {
                             resp.request_focus();
@@ -2599,16 +2597,16 @@ impl NovaApp {
                             selected = 0;
                         }
                         ui.label(
-                            egui::RichText::new("Entrée : insérer   Maj+Entrée : exécuter   ↑↓ : choisir   Échap : fermer")
+                            egui::RichText::new(t("Entrée : insérer   Maj+Entrée : exécuter   ↑↓ : choisir   Échap : fermer"))
                                 .small()
                                 .color(fg.gamma_multiply(0.55)),
                         );
                         ui.add_space(4.0);
                         let items = self.history.search(&query, 300);
                         if loading {
-                            ui.label(egui::RichText::new("Chargement de l'historique…").color(fg.gamma_multiply(0.6)));
+                            ui.label(egui::RichText::new(t("Chargement de l'historique…")).color(fg.gamma_multiply(0.6)));
                         } else if items.is_empty() {
-                            ui.label(egui::RichText::new("Aucune commande").color(fg.gamma_multiply(0.6)));
+                            ui.label(egui::RichText::new(t("Aucune commande")).color(fg.gamma_multiply(0.6)));
                         }
                         selected = selected.min(items.len().saturating_sub(1));
                         egui::ScrollArea::vertical().max_height(380.0).show(ui, |ui| {
@@ -2681,9 +2679,9 @@ impl NovaApp {
         }
         if mode != PaletteMode::Snippets {
             for (i, p) in self.config.profiles.iter().enumerate() {
-                let label = format!("▣ Profil : {}", p.name);
+                let label = crate::i18n::tf("▣ Profil : {}", &[&p.name]);
                 if ok(&format!("{label} projet workspace")) {
-                    out.push((PaletteItem::Profile(i), label, format!("{} onglet(s)", p.tabs.len())));
+                    out.push((PaletteItem::Profile(i), label, crate::i18n::tf("{} onglet(s)", &[&p.tabs.len()])));
                 }
             }
         }
@@ -2697,7 +2695,7 @@ impl NovaApp {
             }
             if !query.is_empty() {
                 for name in self.config.theme_names() {
-                    let label = format!("◐ Thème : {name}");
+                    let label = crate::i18n::tf("◐ Thème : {}", &[&name]);
                     if ok(&format!("{label} theme couleurs")) {
                         out.push((PaletteItem::Theme(name), label, "Apparence".into()));
                     }
@@ -2797,7 +2795,7 @@ impl NovaApp {
                         egui::Layout::left_to_right(egui::Align::Center),
                         |ui| {
                             if self.config.custom_title.is_empty() {
-                                ui.add(egui::Label::new(egui::RichText::new("NovaTerm").strong().color(fg)).truncate());
+                                ui.add(egui::Label::new(egui::RichText::new(t("NovaTerm")).strong().color(fg)).truncate());
                                 ui.add(
                                     egui::Label::new(
                                         egui::RichText::new(format!(" — {}", self.active_pane_title()))
@@ -2815,15 +2813,15 @@ impl NovaApp {
                     );
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                         ui.spacing_mut().item_spacing.x = 4.0;
-                        if window_button(ui, WinIcon::Close, "Fermer", fg, surface, true) {
+                        if window_button(ui, WinIcon::Close, t("Fermer"), fg, surface, true) {
                             close = true;
                         }
                         let (icon, tip) =
-                            if maximized { (WinIcon::Restore, "Restaurer") } else { (WinIcon::Maximize, "Agrandir") };
+                            if maximized { (WinIcon::Restore, t("Restaurer")) } else { (WinIcon::Maximize, t("Agrandir")) };
                         if window_button(ui, icon, tip, fg, surface, false) {
                             toggle_max = true;
                         }
-                        if window_button(ui, WinIcon::Minimize, "Réduire", fg, surface, false) {
+                        if window_button(ui, WinIcon::Minimize, t("Réduire"), fg, surface, false) {
                             minimize = true;
                         }
                     });
@@ -2891,12 +2889,13 @@ impl NovaApp {
             }
             Err(e) => {
                 eprintln!("NovaTerm: image de fond illisible ({path}): {e}");
-                self.toast(format!("Image de fond illisible : {e}"));
+                self.toast(crate::i18n::tf("Image de fond illisible : {}", &[&e]));
             }
         }
     }
 
     fn apply_config_changes(&mut self) {
+        crate::i18n::set_if_changed(self.config.language);
         let sig = theme_sig(&self.config);
         if sig != self.theme_sig {
             self.theme_sig = sig;
@@ -2906,11 +2905,11 @@ impl NovaApp {
             }
             apply_visuals(&self.ctx, &self.theme);
             let name = if self.config.custom_theme.is_some() {
-                "personnalisé".to_string()
+                t("personnalisé").to_string()
             } else {
                 self.config.theme_name.clone()
             };
-            self.toast(format!("Thème : {name}"));
+            self.toast(crate::i18n::tf("Thème : {}", &[&name]));
         }
         if self.config.custom_decorations != self.applied_decorations {
             self.applied_decorations = self.config.custom_decorations;
@@ -2933,10 +2932,10 @@ impl NovaApp {
             match fonts::install(&self.ctx, &self.config.font_family, self.font_catalog.as_ref()) {
                 Ok(()) => {
                     let name = if self.config.font_family.is_empty() { fonts::BUILTIN } else { &self.config.font_family };
-                    self.toast(format!("Police : {name}"));
+                    self.toast(crate::i18n::tf("Police : {}", &[&name]));
                 }
                 Err(e) => {
-                    self.toast(format!("{e} : police intégrée conservée"));
+                    self.toast(crate::i18n::tf("{} : police intégrée conservée", &[&e]));
                     self.config.font_family.clear();
                     self.applied_font.clear();
                     self.config_dirty = true;
@@ -2998,9 +2997,9 @@ impl NovaApp {
         let mut close: Option<usize> = None;
         let mut rename: Option<usize> = None;
         let mut actions: Vec<Action> = Vec::new();
-        let new_tab_tip = format!("Nouvel onglet ({})", self.bindings.first_shortcut(Action::NewTab));
-        let palette_tip = format!("Palette de commandes ({})", self.bindings.first_shortcut(Action::CommandPalette));
-        let settings_tip = format!("Paramètres ({})", self.bindings.first_shortcut(Action::Settings));
+        let new_tab_tip = crate::i18n::tf("Nouvel onglet ({})", &[&self.bindings.first_shortcut(Action::NewTab)]);
+        let palette_tip = crate::i18n::tf("Palette de commandes ({})", &[&self.bindings.first_shortcut(Action::CommandPalette)]);
+        let settings_tip = crate::i18n::tf("Paramètres ({})", &[&self.bindings.first_shortcut(Action::Settings)]);
         let help_tip = format!("Raccourcis ({})", self.bindings.first_shortcut(Action::Help));
         egui::TopBottomPanel::top("tab_bar")
             .frame(egui::Frame::NONE.fill(surface).inner_margin(egui::Margin::symmetric(8, 5)))
@@ -3044,27 +3043,27 @@ impl NovaApp {
                             close = Some(i);
                         }
                         resp.context_menu(|ui| {
-                            if ui.button("Renommer…").clicked() {
+                            if ui.button(t("Renommer…")).clicked() {
                                 rename = Some(i);
                                 ui.close_menu();
                             }
-                            if ui.button("Déplacer à gauche").clicked() {
+                            if ui.button(t("Déplacer à gauche")).clicked() {
                                 select = Some(i);
                                 actions.push(Action::MoveTabLeft);
                                 ui.close_menu();
                             }
-                            if ui.button("Déplacer à droite").clicked() {
+                            if ui.button(t("Déplacer à droite")).clicked() {
                                 select = Some(i);
                                 actions.push(Action::MoveTabRight);
                                 ui.close_menu();
                             }
                             ui.separator();
-                            if ui.button("Fermer l'onglet").clicked() {
+                            if ui.button(t("Fermer l'onglet")).clicked() {
                                 close = Some(i);
                                 ui.close_menu();
                             }
                         });
-                        let hint = if i < 9 { format!("Alt+{} · double-clic : renommer · clic milieu : fermer", i + 1) } else { String::new() };
+                        let hint = if i < 9 { crate::i18n::tf("Alt+{} · double-clic : renommer · clic milieu : fermer", &[&(i + 1)]) } else { String::new() };
                         if !hint.is_empty() {
                             resp.on_hover_text(hint);
                         }
@@ -3072,7 +3071,7 @@ impl NovaApp {
                             let x = egui::RichText::new("×").color(fg.gamma_multiply(0.6));
                             if ui
                                 .add(egui::Button::new(x).fill(Color32::TRANSPARENT).stroke(Stroke::NONE))
-                                .on_hover_text("Fermer l'onglet")
+                                .on_hover_text(t("Fermer l'onglet"))
                                 .clicked()
                             {
                                 close = Some(i);
@@ -3159,10 +3158,9 @@ impl NovaApp {
                 }
             }
         }
-        let hint = format!(
+        let hint = crate::i18n::tf(
             "{} : commandes  ·  {} : aide",
-            self.bindings.first_shortcut(Action::CommandPalette),
-            self.bindings.first_shortcut(Action::Help)
+            &[&self.bindings.first_shortcut(Action::CommandPalette), &self.bindings.first_shortcut(Action::Help)],
         );
         let radius = self.window_radius();
         let cr = CornerRadius { nw: 0, ne: 0, sw: radius, se: radius };
@@ -3271,11 +3269,11 @@ impl NovaApp {
                 // Seuls les schémas courants sont ouverts (pas de javascript:, smb:, etc.).
                 let scheme = url.split(':').next().unwrap_or("").to_ascii_lowercase();
                 if !matches!(scheme.as_str(), "http" | "https" | "mailto" | "ftp" | "sftp" | "ssh") {
-                    self.toast(format!("Lien « {scheme}: » non ouvert par sécurité"));
+                    self.toast(crate::i18n::tf("Lien « {}: » non ouvert par sécurité", &[&scheme]));
                     return;
                 }
                 open_external(&url);
-                self.toast("Ouverture du lien…");
+                self.toast(t("Ouverture du lien…"));
             }
             Target::File { path, line, col } => {
                 let name = path.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default();
@@ -3293,19 +3291,19 @@ impl NovaApp {
                     }
                     Some(cmd) => {
                         if let Err(e) = platform::spawn_command_line(&cmd) {
-                            self.toast(format!("Éditeur introuvable ({e}) : vérifiez Paramètres → Liens"));
+                            self.toast(crate::i18n::tf("Éditeur introuvable ({}) : vérifiez Paramètres → Liens", &[&e]));
                             return;
                         }
-                        self.toast(format!("Ouverture de {name}…"));
+                        self.toast(crate::i18n::tf("Ouverture de {}…", &[&name]));
                     }
                     None => {
                         // Sécurité : jamais d'exécution via un clic (programme, .desktop, AppImage…).
                         if is_executable_file(&path) {
-                            self.toast(format!("« {name} » est un programme : non ouvert par sécurité"));
+                            self.toast(crate::i18n::tf("« {} » est un programme : non ouvert par sécurité", &[&name]));
                             return;
                         }
                         open_external(&path.display().to_string());
-                        self.toast(format!("Ouverture de {name}…"));
+                        self.toast(crate::i18n::tf("Ouverture de {}…", &[&name]));
                     }
                 }
             }
@@ -3482,8 +3480,8 @@ impl NovaApp {
                 }
                 if pane.exited {
                     let msg = match pane.exit_code {
-                        Some(c) => format!("Processus terminé (code {c})  —  Entrée : relancer  ·  fermer : {}", self.bindings.first_shortcut(Action::ClosePane)),
-                        None => format!("Processus terminé  —  Entrée : relancer  ·  fermer : {}", self.bindings.first_shortcut(Action::ClosePane)),
+                        Some(c) => crate::i18n::tf("Processus terminé (code {})  —  Entrée : relancer  ·  fermer : {}", &[&c, &self.bindings.first_shortcut(Action::ClosePane)]),
+                        None => crate::i18n::tf("Processus terminé  —  Entrée : relancer  ·  fermer : {}", &[&self.bindings.first_shortcut(Action::ClosePane)]),
                     };
                     let band = Rect::from_min_max(Pos2::new(pr.left(), pr.bottom() - 30.0), pr.max);
                     painter.rect_filled(band, 0.0, surface_color(&self.theme));
@@ -3748,7 +3746,7 @@ impl NovaApp {
                         let edit = egui::TextEdit::singleline(&mut s.query)
                             .id(search_input_id())
                             .desired_width(170.0)
-                            .hint_text("Rechercher (regex)…");
+                            .hint_text(t("Rechercher (regex)…"));
                         let resp = ui.add(edit);
                         if s.focus {
                             resp.request_focus();
@@ -3760,15 +3758,15 @@ impl NovaApp {
                             s.not_found = false;
                         }
                         if s.not_found {
-                            ui.label(egui::RichText::new("Aucun résultat").small().color(Color32::from_rgb(230, 110, 110)));
+                            ui.label(egui::RichText::new(t("Aucun résultat")).small().color(Color32::from_rgb(230, 110, 110)));
                         }
-                        if ui.button("↑").on_hover_text("Précédent (Maj+Entrée)").clicked() {
+                        if ui.button("↑").on_hover_text(t("Précédent (Maj+Entrée)")).clicked() {
                             prev = true;
                         }
-                        if ui.button("↓").on_hover_text("Suivant (Entrée)").clicked() {
+                        if ui.button("↓").on_hover_text(t("Suivant (Entrée)")).clicked() {
                             next = true;
                         }
-                        if ui.button("×").on_hover_text("Fermer (Échap)").clicked() {
+                        if ui.button("×").on_hover_text(t("Fermer (Échap)")).clicked() {
                             close = true;
                         }
                     });
@@ -3799,9 +3797,9 @@ impl NovaApp {
         let screen = ctx.screen_rect();
         let width = (screen.width() - 40.0).clamp(240.0, 600.0);
         let hint = match mode {
-            PaletteMode::All => "Commande, snippet, profil ou « thème … »  (↑ ↓ Entrée, Échap)",
-            PaletteMode::Snippets => "Commandes favorites…  (Paramètres → Snippets pour en ajouter)",
-            PaletteMode::Profiles => "Profils de projet…  (« Enregistrer la disposition comme profil »)",
+            PaletteMode::All => t("Commande, snippet, profil ou « thème … »  (↑ ↓ Entrée, Échap)"),
+            PaletteMode::Snippets => t("Commandes favorites…  (Paramètres → Snippets pour en ajouter)"),
+            PaletteMode::Profiles => t("Profils de projet…  (« Enregistrer la disposition comme profil »)"),
         };
         egui::Area::new(Id::new("palette"))
             .order(egui::Order::Foreground)
@@ -3830,7 +3828,7 @@ impl NovaApp {
                         ui.add_space(6.0);
                         let items = self.palette_items(&query, mode);
                         if items.is_empty() {
-                            ui.label(egui::RichText::new("Aucun résultat").color(fg.gamma_multiply(0.6)));
+                            ui.label(egui::RichText::new(t("Aucun résultat")).color(fg.gamma_multiply(0.6)));
                         }
                         selected = selected.min(items.len().saturating_sub(1));
                         egui::ScrollArea::vertical().max_height(360.0).show(ui, |ui| {
@@ -3899,22 +3897,22 @@ impl NovaApp {
                     .stroke(Stroke::new(1.0, accent.gamma_multiply(0.6)))
                     .inner_margin(egui::Margin::same(12))
                     .show(ui, |ui| {
-                        ui.label(egui::RichText::new(format!("Renommer l'onglet {}", r.tab + 1)).strong());
+                        ui.label(egui::RichText::new(crate::i18n::tf("Renommer l'onglet {}", &[&(r.tab + 1)])).strong());
                         let resp = ui.add(
                             egui::TextEdit::singleline(&mut r.text)
                                 .id(rename_input_id())
                                 .desired_width(280.0)
-                                .hint_text("Vide = titre automatique"),
+                                .hint_text(t("Vide = titre automatique")),
                         );
                         if r.focus {
                             resp.request_focus();
                             r.focus = false;
                         }
                         ui.horizontal(|ui| {
-                            if ui.button("Valider (Entrée)").clicked() {
+                            if ui.button(t("Valider (Entrée)")).clicked() {
                                 apply = true;
                             }
-                            if ui.button("Annuler (Échap)").clicked() {
+                            if ui.button(t("Annuler (Échap)")).clicked() {
                                 cancel = true;
                             }
                         });
@@ -3935,17 +3933,17 @@ impl NovaApp {
         let accent = rgb(self.theme.cursor);
         egui::Modal::new(Id::new("confirm_modal")).show(ctx, |ui| {
             ui.set_max_width(380.0);
-            ui.heading(&c.title);
+            ui.heading(crate::i18n::tr(&c.title));
             ui.add_space(6.0);
             ui.label(&c.message);
             ui.add_space(10.0);
             ui.horizontal(|ui| {
-                let primary = egui::Button::new(egui::RichText::new(format!("{} (Entrée)", c.button)).strong())
+                let primary = egui::Button::new(egui::RichText::new(crate::i18n::tf("{} (Entrée)", &[&crate::i18n::tr(&c.button)])).strong())
                     .stroke(Stroke::new(1.0, accent));
                 if ui.add(primary).clicked() {
                     yes = true;
                 }
-                if ui.button("Annuler (Échap)").clicked() {
+                if ui.button(t("Annuler (Échap)")).clicked() {
                     no = true;
                 }
             });
@@ -4083,10 +4081,10 @@ impl NovaApp {
             .show(ctx, |ui| {
                 ui.horizontal(|ui| {
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        if ui.small_button("×").on_hover_text("Fermer").clicked() {
+                        if ui.small_button("×").on_hover_text(t("Fermer")).clicked() {
                             close = true;
                         }
-                        if font_related && ui.small_button("Paramètres de police").clicked() {
+                        if font_related && ui.small_button(t("Paramètres de police")).clicked() {
                             open_settings = true;
                             close = true;
                         }
@@ -4120,20 +4118,20 @@ impl NovaApp {
                 ui.horizontal_wrapped(|ui| {
                     ui.label(egui::RichText::new("📦").color(accent));
                     ui.label(
-                        egui::RichText::new("Ajouter NovaTerm au menu des applications ? Le fichier AppImage sera rangé dans ~/Applications.")
+                        egui::RichText::new(t("Ajouter NovaTerm au menu des applications ? Le fichier AppImage sera rangé dans ~/Applications."))
                             .color(rgb(self.theme.foreground)),
                     )
-                    .on_hover_text(format!("Emplacement actuel : {}", path.display()));
-                    if ui.button("Ranger et ajouter au menu").clicked() {
+                    .on_hover_text(crate::i18n::tf("Emplacement actuel : {}", &[&path.display()]));
+                    if ui.button(t("Ranger et ajouter au menu")).clicked() {
                         choice = 1;
                     }
-                    if ui.button("Ajouter au menu sans déplacer").clicked() {
+                    if ui.button(t("Ajouter au menu sans déplacer")).clicked() {
                         choice = 2;
                     }
-                    if ui.small_button("Plus tard").clicked() {
+                    if ui.small_button(t("Plus tard")).clicked() {
                         choice = 3;
                     }
-                    if ui.small_button("Ne plus demander").clicked() {
+                    if ui.small_button(t("Ne plus demander")).clicked() {
                         choice = 4;
                     }
                 });
@@ -4141,8 +4139,8 @@ impl NovaApp {
         match choice {
             1 | 2 => {
                 match crate::appimage::integrate(choice == 1) {
-                    Ok(p) => self.toast(format!("NovaTerm est dans le menu ({})", p.display())),
-                    Err(e) => self.toast(format!("Intégration impossible : {e}")),
+                    Ok(p) => self.toast(crate::i18n::tf("NovaTerm est dans le menu ({})", &[&p.display()])),
+                    Err(e) => self.toast(crate::i18n::tf("Intégration impossible : {}", &[&e])),
                 }
                 self.appimage_offer = None;
             }
@@ -4163,12 +4161,9 @@ impl NovaApp {
         let mut save = false;
         egui::Modal::new(Id::new("save_profile")).show(ctx, |ui| {
             ui.set_max_width(380.0);
-            ui.heading("Enregistrer comme profil");
-            ui.label(format!(
-                "Les {} onglet(s) actuels (splits, dossiers, noms) seront enregistrés. Les commandes de démarrage se règlent ensuite dans Paramètres → Session.",
-                self.tabs.len()
-            ));
-            let r = ui.add(egui::TextEdit::singleline(&mut name).hint_text("Nom du profil (ex. GPlus)").desired_width(300.0));
+            ui.heading(t("Enregistrer comme profil"));
+            ui.label(crate::i18n::tf("Les {} onglet(s) actuels (splits, dossiers, noms) seront enregistrés. Les commandes de démarrage se règlent ensuite dans Paramètres → Session.", &[&self.tabs.len()]));
+            let r = ui.add(egui::TextEdit::singleline(&mut name).hint_text(t("Nom du profil (ex. GPlus)")).desired_width(300.0));
             if focus {
                 r.request_focus();
             }
@@ -4176,10 +4171,10 @@ impl NovaApp {
                 save = true;
             }
             ui.horizontal(|ui| {
-                if ui.button("Enregistrer").clicked() {
+                if ui.button(t("Enregistrer")).clicked() {
                     save = true;
                 }
-                if ui.button("Annuler").clicked() || ui.input(|i| i.key_pressed(Key::Escape)) {
+                if ui.button(t("Annuler")).clicked() || ui.input(|i| i.key_pressed(Key::Escape)) {
                     keep = false;
                 }
             });
@@ -4541,7 +4536,7 @@ impl eframe::App for NovaApp {
         while let Ok((pid, bid, tips)) = self.tips_rx.try_recv() {
             if let Some(t) = tips.iter().find(|t| t.title == "Faute de frappe ?") {
                 let key = self.bindings.first_shortcut(Action::FixLastCommand);
-                self.toast(format!("💡 {}  ({key} pour corriger)", t.detail));
+                self.toast(crate::i18n::tf("💡 {}  ({} pour corriger)", &[&t.detail, &key]));
             }
             if let Some(p) = self.panes.get_mut(&pid) {
                 p.tips.insert(bid, tips);
@@ -4687,7 +4682,7 @@ impl eframe::App for NovaApp {
         self.render_explain(ctx);
         self.render_save_profile(ctx);
         if self.theme_import.is_some() {
-            if let Some(path) = settings::show_file_picker(ctx, &mut self.theme_import, "Importer un thème", settings::is_theme_file) {
+            if let Some(path) = settings::show_file_picker(ctx, &mut self.theme_import, t("Importer un thème"), settings::is_theme_file) {
                 match theme::import_file(&path) {
                     Ok(mut t) => {
                         let base = t.name.clone();
@@ -4698,11 +4693,11 @@ impl eframe::App for NovaApp {
                         }
                         self.config.theme_name = t.name.clone();
                         self.config.custom_theme = None;
-                        self.toast(format!("Thème « {} » importé", t.name));
+                        self.toast(crate::i18n::tf("Thème « {} » importé", &[&t.name]));
                         self.config.user_themes.push(t);
                         self.config_dirty = true;
                     }
-                    Err(e) => self.toast(format!("Import impossible : {e}")),
+                    Err(e) => self.toast(crate::i18n::tf("Import impossible : {}", &[&e])),
                 }
             }
         }

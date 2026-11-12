@@ -1,5 +1,6 @@
 //! Configuration persistante (TOML) et préférences utilisateur.
 
+use crate::i18n::t;
 use std::collections::BTreeMap;
 use std::path::PathBuf;
 
@@ -19,9 +20,9 @@ pub enum CursorShape {
 impl CursorShape {
     pub fn label(self) -> &'static str {
         match self {
-            Self::Block => "Bloc",
-            Self::Beam => "Barre",
-            Self::Underline => "Souligné",
+            Self::Block => t("Bloc"),
+            Self::Beam => t("Barre"),
+            Self::Underline => t("Souligné"),
         }
     }
 
@@ -46,10 +47,10 @@ pub enum BlinkStyle {
 impl BlinkStyle {
     pub fn label(self) -> &'static str {
         match self {
-            Self::Blink => "Clignotement",
-            Self::Fade => "Fondu",
-            Self::Pulse => "Pulsation",
-            Self::Flip => "Rotation verticale",
+            Self::Blink => t("Clignotement"),
+            Self::Fade => t("Fondu"),
+            Self::Pulse => t("Pulsation"),
+            Self::Flip => t("Rotation verticale"),
         }
     }
 }
@@ -65,9 +66,9 @@ pub enum RightClick {
 impl RightClick {
     pub fn label(self) -> &'static str {
         match self {
-            Self::Menu => "Menu contextuel",
-            Self::Paste => "Coller",
-            Self::CopyOrPaste => "Copier la sélection, sinon coller",
+            Self::Menu => t("Menu contextuel"),
+            Self::Paste => t("Coller"),
+            Self::CopyOrPaste => t("Copier la sélection, sinon coller"),
         }
     }
 }
@@ -83,9 +84,9 @@ pub enum BellMode {
 impl BellMode {
     pub fn label(self) -> &'static str {
         match self {
-            Self::None => "Désactivé",
-            Self::Visual => "Flash visuel",
-            Self::Urgent => "Flash + attention de la fenêtre",
+            Self::None => t("Désactivé"),
+            Self::Visual => t("Flash visuel"),
+            Self::Urgent => t("Flash + attention de la fenêtre"),
         }
     }
 }
@@ -101,9 +102,9 @@ pub enum BadgeMode {
 impl BadgeMode {
     pub fn label(self) -> &'static str {
         match self {
-            Self::Always => "Toujours",
-            Self::Notable => "Échecs et commandes de plus de 2 s",
-            Self::Never => "Jamais",
+            Self::Always => t("Toujours"),
+            Self::Notable => t("Échecs et commandes de plus de 2 s"),
+            Self::Never => t("Jamais"),
         }
     }
 }
@@ -119,9 +120,9 @@ pub enum RestoreMode {
 impl RestoreMode {
     pub fn label(self) -> &'static str {
         match self {
-            Self::Off => "Non (nouvelle session vide)",
-            Self::Layout => "Onglets, splits, dossiers et noms",
-            Self::LayoutAndContent => "Tout, avec le texte affiché",
+            Self::Off => t("Non (nouvelle session vide)"),
+            Self::Layout => t("Onglets, splits, dossiers et noms"),
+            Self::LayoutAndContent => t("Tout, avec le texte affiché"),
         }
     }
 }
@@ -137,9 +138,9 @@ pub enum AutoTheme {
 impl AutoTheme {
     pub fn label(self) -> &'static str {
         match self {
-            Self::Off => "Désactivé",
-            Self::System => "Suivre le système",
-            Self::Schedule => "Selon l'heure",
+            Self::Off => t("Désactivé"),
+            Self::System => t("Suivre le système"),
+            Self::Schedule => t("Selon l'heure"),
         }
     }
 }
@@ -154,8 +155,8 @@ pub enum BroadcastScope {
 impl BroadcastScope {
     pub fn label(self) -> &'static str {
         match self {
-            Self::Tab => "Panneaux de l'onglet",
-            Self::All => "Tous les panneaux de tous les onglets",
+            Self::Tab => t("Panneaux de l'onglet"),
+            Self::All => t("Tous les panneaux de tous les onglets"),
         }
     }
 }
@@ -181,9 +182,9 @@ pub enum AcceptKey {
 impl AcceptKey {
     pub fn label(self) -> &'static str {
         match self {
-            Self::RightOrEnd => "→ ou Fin",
-            Self::Right => "→ seulement",
-            Self::Tab => "Tab (remplace la complétion du shell)",
+            Self::RightOrEnd => t("→ ou Fin"),
+            Self::Right => t("→ seulement"),
+            Self::Tab => t("Tab (remplace la complétion du shell)"),
         }
     }
 }
@@ -199,9 +200,9 @@ pub enum StartDir {
 impl StartDir {
     pub fn label(self) -> &'static str {
         match self {
-            Self::Inherit => "Celui du panneau actif",
-            Self::Home => "Dossier personnel",
-            Self::Custom => "Dossier personnalisé",
+            Self::Inherit => t("Celui du panneau actif"),
+            Self::Home => t("Dossier personnel"),
+            Self::Custom => t("Dossier personnalisé"),
         }
     }
 }
@@ -370,6 +371,9 @@ pub struct Config {
     /// Arrêter le clignotement du curseur après N secondes d'inactivité (0 = jamais).
     pub cursor_blink_timeout: u32,
 
+    /// Langue de l'interface.
+    pub language: crate::i18n::Language,
+
     // --- Mises à jour ---
     /// Vérifier régulièrement si une nouvelle version est publiée (GitHub).
     pub update_check: bool,
@@ -502,6 +506,7 @@ impl Default for Config {
             quake_hotkey: "F12".to_string(),
             cursor_blink_timeout: 15,
             appimage_prompt: true,
+            language: crate::i18n::Language::Auto,
             update_check: true,
             update_prerelease: true,
             update_skip: String::new(),

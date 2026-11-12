@@ -2,6 +2,7 @@
 //!
 //! Tout reste en mémoire, dans NovaTerm : rien n'est envoyé ni réécrit sur disque.
 
+use crate::i18n::t;
 use std::collections::HashMap;
 use std::path::Path;
 use std::sync::mpsc::{self, Receiver};
@@ -16,8 +17,8 @@ pub enum Ranking {
 impl Ranking {
     pub fn label(self) -> &'static str {
         match self {
-            Self::Recent => "La plus récente",
-            Self::Frequent => "La plus utilisée",
+            Self::Recent => t("La plus récente"),
+            Self::Frequent => t("La plus utilisée"),
         }
     }
 }
