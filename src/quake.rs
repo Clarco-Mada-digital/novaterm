@@ -55,7 +55,7 @@ pub fn toggle_or_launch() {
             }
         }
     }
-    if let Ok(exe) = std::env::current_exe() {
+    if let Some(exe) = crate::appimage::stable_exe() {
         if let Err(e) = Command::new(exe).arg("--quake").spawn() {
             eprintln!("NovaTerm: lancement du terminal rapide impossible: {e}");
         }
@@ -104,7 +104,35 @@ pub fn to_gtk_accel(s: &str) -> String {
             ("shift" | "maj", false) => out.push_str("<Shift>"),
             ("super" | "win" | "meta", false) => out.push_str("<Super>"),
             (_, true) if p.len() == 1 => out.push_str(&p.to_ascii_lowercase()),
-            (_, true) => out.push_str(p),
+            (_, true) => out.push_str(match p.to_ascii_lowercase().as_str() {
+                "space" | "espace" => "space",
+                "enter" | "entrée" | "return" => "Return",
+                "pageup" => "Page_Up",
+                "pagedown" => "Page_Down",
+                "plus" => "plus",
+                "minus" => "minus",
+                "equals" => "equal",
+                "comma" => "comma",
+                "period" => "period",
+                "slash" => "slash",
+                "backslash" => "backslash",
+                "backtick" => "grave",
+                "quote" => "apostrophe",
+                "semicolon" => "semicolon",
+                "openbracket" => "bracketleft",
+                "closebracket" => "bracketright",
+                "escape" => "Escape",
+                "tab" => "Tab",
+                "insert" => "Insert",
+                "delete" => "Delete",
+                "home" => "Home",
+                "end" => "End",
+                "up" => "Up",
+                "down" => "Down",
+                "left" => "Left",
+                "right" => "Right",
+                _ => p,
+            }),
             _ => {}
         }
     }
@@ -120,60 +148,313 @@ fn gsettings(args: &[&str]) -> Result<String, String> {
     }
 }
 
-fn add_to_list(list: &str, item: &str) -> String {
-    let mut items: Vec<String> = list
-        .trim_start_matches("@as")
+fn parse_list(list: &str) -> Vec<String> {
+    list.trim_start_matches("@as")
         .trim()
         .trim_start_matches('[')
         .trim_end_matches(']')
         .split(',')
         .map(|s| s.trim().trim_matches('\'').to_string())
         .filter(|s| !s.is_empty())
-        .collect();
+        .collect()
+}
+
+fn format_list(items: &[String]) -> String {
+    if items.is_empty() {
+        "@as []".to_string()
+    } else {
+        format!("[{}]", items.iter().map(|i| format!("'{i}'")).collect::<Vec<_>>().join(", "))
+    }
+}
+
+#[cfg(test)]
+fn add_to_list(list: &str, item: &str) -> String {
+    let mut items = parse_list(list);
     if !items.iter().any(|i| i == item) {
         items.push(item.to_string());
     }
-    format!("[{}]", items.iter().map(|i| format!("'{i}'")).collect::<Vec<_>>().join(", "))
+    format_list(&items)
 }
 
-/// Crée (ou met à jour) le raccourci global du bureau qui lance `novaterm --toggle`.
-pub fn install_shortcut(combo: &str) -> Result<String, String> {
-    if !cfg!(target_os = "linux") {
-        return Err("Sur ce système, créez un raccourci clavier qui lance « novaterm --toggle ».".into());
-    }
-    let exe = std::env::current_exe().map_err(|e| e.to_string())?;
-    let command = format!("{} --toggle", exe.display());
-    let accel = to_gtk_accel(combo);
-    let desktop = std::env::var("XDG_CURRENT_DESKTOP").unwrap_or_default().to_ascii_lowercase();
-    if desktop.contains("cinnamon") || desktop.contains("x-cinnamon") {
-        let base = "/org/cinnamon/desktop/keybindings/custom-keybindings/novaterm-quake/";
-        let schema = format!("org.cinnamon.desktop.keybindings.custom-keybinding:{base}");
-        gsettings(&["set", &schema, "name", "NovaTerm (terminal rapide)"])?;
-        gsettings(&["set", &schema, "command", &command])?;
-        gsettings(&["set", &schema, "binding", &format!("['{accel}']")])?;
-        let list = gsettings(&["get", "org.cinnamon.desktop.keybindings", "custom-list"])?;
-        gsettings(&["set", "org.cinnamon.desktop.keybindings", "custom-list", &add_to_list(&list, "novaterm-quake")])?;
-        Ok(format!("Raccourci {combo} créé dans Cinnamon."))
-    } else if desktop.contains("gnome") || desktop.contains("unity") || desktop.contains("budgie") {
-        let base = "/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/novaterm-quake/";
-        let schema = format!("org.gnome.settings-daemon.plugins.media-keys.custom-keybinding:{base}");
-        gsettings(&["set", &schema, "name", "NovaTerm (terminal rapide)"])?;
-        gsettings(&["set", &schema, "command", &command])?;
-        gsettings(&["set", &schema, "binding", &accel])?;
-        let key = "org.gnome.settings-daemon.plugins.media-keys";
-        let list = gsettings(&["get", key, "custom-keybindings"])?;
-        gsettings(&["set", key, "custom-keybindings", &add_to_list(&list, base)])?;
-        Ok(format!("Raccourci {combo} créé dans GNOME."))
+/// Valeur texte au format GVariant pour `gsettings set` (« 'texte' »).
+fn gvariant_str(s: &str) -> String {
+    format!("'{}'", s.replace('\\', "\\\\").replace('\'', "\\'"))
+}
+
+fn toggle_command(exe: &std::path::Path) -> String {
+    format!("\"{}\" --toggle", exe.display())
+}
+
+/// Programme lancé par une commande gsettings (« '"/chemin/x" --toggle' » → /chemin/x).
+fn program_of(command: &str) -> Option<std::path::PathBuf> {
+    let c = command.trim().trim_matches('\'');
+    let prog = if let Some(rest) = c.strip_prefix('"') {
+        rest.split('"').next()?
     } else {
-        Err(format!(
-            "Bureau « {desktop} » non reconnu : créez un raccourci clavier qui lance « {command} »."
-        ))
+        c.split_whitespace().next()?
+    };
+    (!prog.is_empty()).then(|| std::path::PathBuf::from(prog))
+}
+
+/// Bureau dont on sait gérer les raccourcis personnalisés.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum Desk {
+    Cinnamon,
+    Gnome,
+}
+
+/// Identifiant du raccourci. Cinnamon ne retire au rechargement que les raccourcis
+/// dont le nom contient « custom » : l'identifiant doit donc le contenir.
+const ID: &str = "custom-novaterm-quake";
+/// Ancien identifiant (v0.0.1), migré automatiquement.
+const LEGACY_ID: &str = "novaterm-quake";
+
+fn desk() -> Option<Desk> {
+    if !cfg!(target_os = "linux") {
+        return None;
+    }
+    let d = std::env::var("XDG_CURRENT_DESKTOP").unwrap_or_default().to_ascii_lowercase();
+    if d.contains("cinnamon") {
+        Some(Desk::Cinnamon)
+    } else if d.contains("gnome") || d.contains("unity") || d.contains("budgie") {
+        Some(Desk::Gnome)
+    } else {
+        None
+    }
+}
+
+impl Desk {
+    fn list_schema(self) -> &'static str {
+        match self {
+            Desk::Cinnamon => "org.cinnamon.desktop.keybindings",
+            Desk::Gnome => "org.gnome.settings-daemon.plugins.media-keys",
+        }
+    }
+    fn list_key(self) -> &'static str {
+        match self {
+            Desk::Cinnamon => "custom-list",
+            Desk::Gnome => "custom-keybindings",
+        }
+    }
+    fn path(self, id: &str) -> String {
+        match self {
+            Desk::Cinnamon => format!("/org/cinnamon/desktop/keybindings/custom-keybindings/{id}/"),
+            Desk::Gnome => format!("/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/{id}/"),
+        }
+    }
+    /// Élément de la liste : le nom (Cinnamon) ou le chemin (GNOME).
+    fn item(self, id: &str) -> String {
+        match self {
+            Desk::Cinnamon => id.to_string(),
+            Desk::Gnome => self.path(id),
+        }
+    }
+    fn entry(self, id: &str) -> String {
+        let schema = match self {
+            Desk::Cinnamon => "org.cinnamon.desktop.keybindings.custom-keybinding",
+            Desk::Gnome => "org.gnome.settings-daemon.plugins.media-keys.custom-keybinding",
+        };
+        format!("{schema}:{}", self.path(id))
+    }
+    fn binding_value(self, accel: &str) -> String {
+        match self {
+            Desk::Cinnamon => format!("[{}]", gvariant_str(accel)),
+            Desk::Gnome => gvariant_str(accel),
+        }
+    }
+    fn read_list(self) -> Vec<String> {
+        gsettings(&["get", self.list_schema(), self.list_key()]).map(|l| parse_list(&l)).unwrap_or_default()
+    }
+    /// Écrit la liste en forçant le bureau à recharger les raccourcis : Cinnamon ne
+    /// relit les commandes et touches que lorsque la liste change.
+    fn write_list_reload(self, items: &[String], ours: Option<&str>) -> Result<(), String> {
+        gsettings(&["set", self.list_schema(), self.list_key(), &format_list(items)])?;
+        if let Some(o) = ours {
+            let mut with = items.to_vec();
+            with.push(o.to_string());
+            std::thread::sleep(Duration::from_millis(150));
+            gsettings(&["set", self.list_schema(), self.list_key(), &format_list(&with)])?;
+        }
+        Ok(())
+    }
+    fn reset_entry(self, id: &str) {
+        for key in ["name", "command", "binding"] {
+            let _ = gsettings(&["reset", &self.entry(id), key]);
+        }
+    }
+}
+
+/// « <Primary><Alt>t » → « Ctrl+Alt+T ».
+pub fn accel_label(accel: &str) -> String {
+    let mut out = String::new();
+    let mut rest = accel;
+    while let Some(start) = rest.find('<') {
+        let Some(end) = rest[start..].find('>') else { break };
+        let m = &rest[start + 1..start + end];
+        out.push_str(match m.to_ascii_lowercase().as_str() {
+            "primary" | "control" | "ctrl" => "Ctrl+",
+            "alt" | "mod1" => "Alt+",
+            "shift" => "Maj+",
+            "super" | "mod4" => "Super+",
+            _ => "",
+        });
+        rest = &rest[start + end + 1..];
+    }
+    let key = if rest.chars().count() == 1 { rest.to_uppercase() } else { rest.to_string() };
+    out + &key
+}
+
+/// État du raccourci global, pour l'afficher dans les paramètres.
+pub struct ShortcutStatus {
+    pub keys: String,
+    pub program: Option<std::path::PathBuf>,
+    pub program_ok: bool,
+    /// Ancien identifiant encore présent (raccourci bloqué jusqu'à la migration).
+    pub legacy: bool,
+}
+
+pub fn shortcut_status() -> Option<ShortcutStatus> {
+    let d = desk()?;
+    let list = d.read_list();
+    let legacy = list.contains(&d.item(LEGACY_ID));
+    let id = if list.contains(&d.item(ID)) {
+        ID
+    } else if legacy {
+        LEGACY_ID
+    } else {
+        return None;
+    };
+    let binding = gsettings(&["get", &d.entry(id), "binding"]).unwrap_or_default();
+    let accel = parse_list(&binding).into_iter().next().unwrap_or_else(|| binding.trim_matches('\'').to_string());
+    let program = gsettings(&["get", &d.entry(id), "command"]).ok().and_then(|c| program_of(&c));
+    let program_ok = program.as_ref().is_some_and(|p| p.exists() && !p.starts_with("/tmp/.mount_"));
+    Some(ShortcutStatus { keys: accel_label(&accel), program, program_ok, legacy })
+}
+
+/// Autres raccourcis du bureau qui utilisent déjà cette combinaison.
+pub fn conflicts(accel: &str) -> Vec<String> {
+    let Some(d) = desk() else { return Vec::new() };
+    let needle = format!("'{}'", accel.to_ascii_lowercase());
+    let mut out = Vec::new();
+    let schemas: &[&str] = match d {
+        Desk::Cinnamon => &["org.cinnamon.desktop.keybindings.wm", "org.cinnamon.desktop.keybindings.media-keys", "org.cinnamon.desktop.keybindings"],
+        Desk::Gnome => &["org.gnome.desktop.wm.keybindings", "org.gnome.settings-daemon.plugins.media-keys", "org.gnome.shell.keybindings"],
+    };
+    for schema in schemas {
+        let Ok(all) = gsettings(&["list-recursively", schema]) else { continue };
+        for line in all.lines() {
+            let mut parts = line.splitn(3, ' ');
+            let (_, key, value) = (parts.next(), parts.next().unwrap_or(""), parts.next().unwrap_or(""));
+            if value.to_ascii_lowercase().contains(&needle) && key != d.list_key() {
+                out.push(key.to_string());
+            }
+        }
+    }
+    for item in d.read_list() {
+        let id = item.trim_end_matches('/').rsplit('/').next().unwrap_or(&item).to_string();
+        if id == ID || id == LEGACY_ID {
+            continue;
+        }
+        let b = gsettings(&["get", &d.entry(&id), "binding"]).unwrap_or_default();
+        if b.to_ascii_lowercase().contains(&needle) {
+            let name = gsettings(&["get", &d.entry(&id), "name"]).unwrap_or_default();
+            let name = name.trim_matches('\'').trim();
+            out.push(if name.is_empty() { format!("raccourci personnalisé « {id} »") } else { name.to_string() });
+        }
+    }
+    out.dedup();
+    out
+}
+
+/// Écrit le raccourci (touches GTK) et force son rechargement ; migre l'ancien.
+fn write_shortcut(d: Desk, accel: &str, exe: &std::path::Path) -> Result<(), String> {
+    let mut items: Vec<String> = d.read_list().into_iter().filter(|i| *i != d.item(ID) && *i != d.item(LEGACY_ID)).collect();
+    d.reset_entry(LEGACY_ID);
+    let entry = d.entry(ID);
+    gsettings(&["set", &entry, "name", &gvariant_str("NovaTerm (terminal rapide)")])?;
+    gsettings(&["set", &entry, "command", &gvariant_str(&toggle_command(exe))])?;
+    gsettings(&["set", &entry, "binding", &d.binding_value(accel)])?;
+    items.retain(|i| !i.is_empty());
+    d.write_list_reload(&items, Some(&d.item(ID)))
+}
+
+/// Répare un raccourci existant : ancien identifiant (migré) ou exécutable disparu
+/// (dossier temporaire d'une AppImage, ancien emplacement). `exe` = nouvel emplacement.
+pub fn repair_shortcut(exe: Option<&std::path::Path>) -> Option<String> {
+    let d = desk()?;
+    let exe = exe.map(std::path::Path::to_path_buf).or_else(crate::appimage::stable_exe)?;
+    if exe.starts_with("/tmp/.mount_") || !exe.exists() {
+        return None;
+    }
+    let status = shortcut_status()?;
+    if status.program_ok && !status.legacy {
+        return None;
+    }
+    let id = if status.legacy && !d.read_list().contains(&d.item(ID)) { LEGACY_ID } else { ID };
+    let binding = gsettings(&["get", &d.entry(id), "binding"]).ok()?;
+    let accel = parse_list(&binding).into_iter().next().unwrap_or_else(|| binding.trim_matches('\'').to_string());
+    if accel.is_empty() {
+        return None;
+    }
+    write_shortcut(d, &accel, &exe).ok()?;
+    Some(format!("Raccourci {} du terminal rapide réparé", accel_label(&accel)))
+}
+
+/// Supprime le raccourci global (et l'ancien identifiant).
+pub fn remove_shortcut() -> Result<String, String> {
+    let d = desk().ok_or("bureau non pris en charge")?;
+    let items: Vec<String> = d.read_list().into_iter().filter(|i| *i != d.item(ID) && *i != d.item(LEGACY_ID)).collect();
+    d.write_list_reload(&items, None)?;
+    d.reset_entry(ID);
+    d.reset_entry(LEGACY_ID);
+    Ok("Raccourci du terminal rapide supprimé.".into())
+}
+
+/// Crée (ou remplace) le raccourci global qui lance `novaterm --toggle`.
+/// L'ancienne touche est retirée : il n'y a jamais deux raccourcis.
+pub fn install_shortcut(combo: &str) -> Result<String, String> {
+    let exe = crate::appimage::stable_exe().ok_or("exécutable introuvable")?;
+    let Some(d) = desk() else {
+        return Err(format!(
+            "Sur ce bureau, créez vous-même un raccourci clavier qui lance : {}",
+            toggle_command(&exe)
+        ));
+    };
+    let accel = to_gtk_accel(combo);
+    if accel.is_empty() {
+        return Err("Combinaison vide".into());
+    }
+    write_shortcut(d, &accel, &exe)?;
+    let others = conflicts(&accel);
+    let name = if d == Desk::Cinnamon { "Cinnamon" } else { "GNOME" };
+    if others.is_empty() {
+        Ok(format!("✔ {} active dans {name}.", accel_label(&accel)))
+    } else {
+        Ok(format!("⚠ {} est aussi utilisé par : {} — choisissez une autre touche si rien ne se passe.", accel_label(&accel), others.join(", ")))
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn program_parsing() {
+        assert_eq!(program_of("'\"/home/a/Applications/NovaTerm.AppImage\" --toggle'").unwrap(), std::path::PathBuf::from("/home/a/Applications/NovaTerm.AppImage"));
+        assert_eq!(program_of("'/tmp/.mount_X/usr/bin/novaterm --toggle'").unwrap(), std::path::PathBuf::from("/tmp/.mount_X/usr/bin/novaterm"));
+        assert_eq!(toggle_command(std::path::Path::new("/a b/n")), "\"/a b/n\" --toggle");
+        assert_eq!(gvariant_str("\"/a'b\" --toggle"), "'\"/a\\'b\" --toggle'");
+    }
+
+    #[test]
+    fn labels_and_lists() {
+        assert_eq!(accel_label("<Primary><Alt>t"), "Ctrl+Alt+T");
+        assert_eq!(accel_label("F12"), "F12");
+        assert_eq!(to_gtk_accel("Ctrl+Space"), "<Primary>space");
+        assert_eq!(format_list(&[]), "@as []");
+        assert_eq!(parse_list("['custom0', 'custom-novaterm-quake']"), vec!["custom0", "custom-novaterm-quake"]);
+        assert!(ID.contains("custom"), "Cinnamon ne retire que les raccourcis nommés « custom… »");
+    }
 
     #[test]
     fn accel_and_list() {

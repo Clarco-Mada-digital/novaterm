@@ -36,6 +36,8 @@ Options :
   --profile NOM        ouvrir un profil de projet
   --quake              lancer le terminal rapide (fenêtre qui descend du haut)
   --toggle             afficher / masquer le terminal rapide (à lier à un raccourci)
+  --quake-shortcut TOUCHE   créer le raccourci du bureau (ex. F12, Ctrl+Alt+T)
+  --quake-shortcut-remove   supprimer ce raccourci
   --imgcat FICHIER     afficher une image dans le terminal (--width N|N%|Npx)
   --integrate          AppImage : ranger dans ~/Applications et ajouter au menu
   --unintegrate        AppImage : retirer du menu
@@ -117,6 +119,23 @@ fn main() -> eframe::Result<()> {
         match appimage::unintegrate() {
             Ok(()) => println!("NovaTerm retiré du menu (le fichier AppImage est conservé)."),
             Err(e) => eprintln!("Erreur : {e}"),
+        }
+        return Ok(());
+    }
+    if let Some(key) = arg_value(&args, "--quake-shortcut") {
+        match quake::install_shortcut(&key) {
+            Ok(m) => println!("{m}"),
+            Err(e) => {
+                eprintln!("{e}");
+                std::process::exit(1);
+            }
+        }
+        return Ok(());
+    }
+    if has("--quake-shortcut-remove") {
+        match quake::remove_shortcut() {
+            Ok(m) => println!("{m}"),
+            Err(e) => eprintln!("{e}"),
         }
         return Ok(());
     }

@@ -269,6 +269,8 @@ pub struct NovaApp {
     demo: Option<Demo>,
     /// AppImage en cours d'exécution, pas encore dans le menu (proposition affichée).
     appimage_offer: Option<PathBuf>,
+    /// Messages de tâches de fond (ex. réparation du raccourci F12).
+    notice_rx: Option<Receiver<String>>,
 }
 
 /// Étape du mode démo (`NOVATERM_DEMO=fichier`). Les entrées sont injectées dans
@@ -540,6 +542,16 @@ impl NovaApp {
             system_dark: None,
             demo: std::env::var("NOVATERM_DEMO").ok().and_then(|p| Demo::load(&p)),
             appimage_offer: crate::appimage::current().filter(|p| !crate::appimage::is_integrated(p)),
+            notice_rx: {
+                // Répare en arrière-plan un raccourci F12 cassé (ancien emplacement, AppImage…).
+                let (tx, rx) = std::sync::mpsc::channel();
+                std::thread::spawn(move || {
+                    if let Some(msg) = quake::repair_shortcut(None) {
+                        let _ = tx.send(msg);
+                    }
+                });
+                Some(rx)
+            },
             config,
         };
         // Démarrage : profil demandé, sinon session précédente, sinon un onglet vide.
@@ -1457,7 +1469,7 @@ impl NovaApp {
     }
 
     fn new_window(&self) {
-        let Ok(exe) = std::env::current_exe() else { return };
+        let Some(exe) = crate::appimage::stable_exe() else { return };
         let mut cmd = std::process::Command::new(exe);
         if let Some(cwd) = self.start_cwd() {
             cmd.current_dir(cwd);
@@ -3862,7 +3874,7 @@ impl eframe::App for NovaApp {
             // Jamais de focus clavier sur un bouton : Entrée ne peut plus « cliquer » dessus.
             ctx.memory_mut(|m| m.surrender_focus(id));
         }
-        let capturing = self.settings_ui.capture.is_some();
+        let capturing = self.settings_ui.capture.is_some() || self.settings_ui.quake_capture;
         if capturing {
             text_focus = false;
         }
@@ -3920,6 +3932,14 @@ impl eframe::App for NovaApp {
                     if !pressed {
                         if text_focus {
                             kept.push(ev);
+                        }
+                        continue;
+                    }
+                    // Touche du terminal rapide (Paramètres → Terminal rapide).
+                    if self.settings_ui.quake_capture {
+                        self.settings_ui.quake_capture = false;
+                        if key != Key::Escape || kmods.any() {
+                            self.settings_ui.quake_captured = Some(KeyCombo::new(kmods.ctrl, kmods.shift, kmods.alt, key));
                         }
                         continue;
                     }
@@ -4129,6 +4149,10 @@ impl eframe::App for NovaApp {
 
         self.metrics = render::compute_metrics(ctx, &self.config);
         self.run_demo(ctx, time);
+        if let Some(msg) = self.notice_rx.as_ref().and_then(|rx| rx.try_recv().ok()) {
+            self.toast(msg);
+            self.notice_rx = None;
+        }
         self.process_pending();
         if self.tabs.is_empty() {
             return;
@@ -4236,6 +4260,11 @@ impl eframe::App for NovaApp {
                 Err(e) => e,
             };
             self.settings_ui.quake_note = Some(note);
+            self.settings_ui.quake_status = None;
+        }
+        if out.remove_quake_shortcut {
+            self.settings_ui.quake_note = Some(quake::remove_shortcut().unwrap_or_else(|e| e));
+            self.settings_ui.quake_status = None;
         }
         if self.file_browser.is_some() && settings::show_file_browser(ctx, &mut self.file_browser, &mut self.config) {
             self.config_dirty = true;

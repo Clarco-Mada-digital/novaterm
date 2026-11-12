@@ -62,6 +62,13 @@ cat > "$APP/Contents/Info.plist" <<EOF
 </plist>
 EOF
 
+# Signature « ad hoc » (gratuite, sans compte Apple Developer) : évite le message
+# « application endommagée » sur Apple Silicon. Gatekeeper affichera seulement
+# « développeur non identifié » (clic droit → Ouvrir la première fois).
+echo "==> Signature ad hoc"
+codesign --force --deep --sign - "$APP"
+codesign --verify --deep --strict "$APP"
+
 echo "==> Image disque (.dmg)"
 DMG="$DIST/NovaTerm-$VERSION-macos-$ARCH.dmg"
 rm -f "$DMG"

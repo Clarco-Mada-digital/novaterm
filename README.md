@@ -132,7 +132,9 @@ Application non signée : à la première ouverture, « Informations complément
 <summary><b>🍎 macOS</b></summary>
 
 `NovaTerm-X-macos-universal.dmg` (Intel et Apple Silicon) : glisser NovaTerm dans
-Applications. Application non signée : la première fois, clic droit → Ouvrir.
+Applications. L'application n'est pas encore notariée par Apple : la première fois,
+clic droit → **Ouvrir**. Si macOS indique qu'elle est « endommagée » :
+`xattr -dr com.apple.quarantine /Applications/NovaTerm.app`
 
 </details>
 

@@ -12,6 +12,12 @@ pub fn current() -> Option<PathBuf> {
     std::env::var_os("APPIMAGE").map(PathBuf::from).filter(|p| p.is_file())
 }
 
+/// Chemin durable de l'exécutable : l'AppImage elle-même si on tourne depuis une
+/// AppImage (son dossier `/tmp/.mount_…` disparaît à la fermeture), sinon le binaire.
+pub fn stable_exe() -> Option<PathBuf> {
+    current().or_else(|| std::env::current_exe().ok())
+}
+
 fn desktop_file() -> Option<PathBuf> {
     Some(dirs::data_dir()?.join("applications").join("novaterm.desktop"))
 }
@@ -81,6 +87,8 @@ pub fn integrate(move_to_apps: bool) -> Result<PathBuf, String> {
     }
     std::fs::write(&desktop, desktop_entry(&app)).map_err(|e| e.to_string())?;
     refresh_menus();
+    // Le raccourci du terminal rapide doit suivre le nouvel emplacement.
+    let _ = crate::quake::repair_shortcut(Some(&app));
     Ok(app)
 }
 

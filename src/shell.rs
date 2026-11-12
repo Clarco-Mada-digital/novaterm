@@ -120,7 +120,7 @@ pub fn launch_for(shell_path: &str) -> Launch {
         .unwrap_or("")
         .to_string();
     let mut launch = Launch::default();
-    if let Ok(exe) = std::env::current_exe() {
+    if let Some(exe) = crate::appimage::stable_exe() {
         launch.env.push(("NOVATERM_BIN".into(), exe.display().to_string()));
     }
     match name.as_str() {

@@ -148,6 +148,11 @@ pub struct SettingsUi {
     pub note: Option<String>,
     confirm_reset: bool,
     pub quake_note: Option<String>,
+    /// En attente de la touche du terminal rapide (capture au clavier).
+    pub quake_capture: bool,
+    pub quake_captured: Option<KeyCombo>,
+    /// État du raccourci dans le bureau (lu à la demande, pas à chaque image).
+    pub quake_status: Option<Option<crate::quake::ShortcutStatus>>,
     pub appimage_note: Option<String>,
     /// Recherche dans les paramètres.
     pub search: String,
@@ -172,6 +177,7 @@ pub struct SettingsOut {
     pub action: Option<Action>,
     pub open_profile: Option<usize>,
     pub install_quake_shortcut: bool,
+    pub remove_quake_shortcut: bool,
     pub run_snippet: Option<usize>,
 }
 
@@ -1028,18 +1034,83 @@ fn page_quake(ui: &mut egui::Ui, config: &mut Config, st: &mut SettingsUi, out: 
         ui.add(egui::Slider::new(&mut config.quake_width, 0.3..=1.0).text("Largeur (part de l'écran)"));
         ui.checkbox(&mut config.quake_hide_on_unfocus, "Se cacher quand on clique ailleurs");
     });
+    // Touche capturée au clavier : appliquée immédiatement au bureau.
+    if let Some(c) = st.quake_captured.take() {
+        let alone = !c.ctrl && !c.alt && !c.shift;
+        let fkey = matches!(
+            c.key,
+            Key::F1 | Key::F2 | Key::F3 | Key::F4 | Key::F5 | Key::F6 | Key::F7 | Key::F8 | Key::F9 | Key::F10 | Key::F11 | Key::F12
+                | Key::Insert
+        );
+        if alone && !fkey {
+            st.quake_note = Some(format!(
+                "« {} » seule bloquerait cette touche partout : ajoutez Ctrl, Alt ou Maj, ou utilisez une touche F.",
+                c.display()
+            ));
+        } else {
+            config.quake_hotkey = c.to_config_string();
+            out.install_quake_shortcut = true;
+        }
+    }
+    if st.quake_status.is_none() {
+        st.quake_status = Some(crate::quake::shortcut_status());
+    }
     card(ui, "Raccourci global", |ui| {
         ui.horizontal(|ui| {
-            ui.label("Touche");
-            ui.add(egui::TextEdit::singleline(&mut config.quake_hotkey).desired_width(120.0).hint_text("F12, Ctrl+Alt+T…"));
-            if ui.button("Créer le raccourci du bureau").clicked() {
-                out.install_quake_shortcut = true;
+            ui.label("Touche :");
+            let current = KeyCombo::parse(&config.quake_hotkey).map(|c| c.display()).unwrap_or_else(|| config.quake_hotkey.clone());
+            if st.quake_capture {
+                ui.label(RichText::new("⌨ Appuyez sur la combinaison voulue… (Échap pour annuler)").color(Color32::from_rgb(120, 200, 255)));
+            } else {
+                ui.label(RichText::new(current).monospace().strong());
+                if ui.button("⌨ Définir au clavier").on_hover_text("Cliquez puis appuyez sur la touche ou la combinaison").clicked() {
+                    st.quake_capture = true;
+                    st.quake_note = None;
+                }
+                if ui.button("Appliquer").on_hover_text("Recréer le raccourci du bureau avec cette touche").clicked() {
+                    out.install_quake_shortcut = true;
+                }
             }
         });
+        // État réel dans le bureau.
+        match st.quake_status.as_ref().and_then(|s| s.as_ref()) {
+            Some(s) => {
+                let (txt, color) = if s.legacy {
+                    ("⚠ Ancien raccourci (v0.0.1) : cliquez sur « Appliquer » pour le réparer.".to_string(), Color32::from_rgb(230, 180, 90))
+                } else if s.program_ok {
+                    (format!("✔ Actif dans le bureau : {}", s.keys), Color32::from_rgb(110, 200, 120))
+                } else {
+                    (
+                        format!(
+                            "✖ {} pointe vers un programme introuvable ({}) : cliquez sur « Appliquer ».",
+                            s.keys,
+                            s.program.as_ref().map(|p| p.display().to_string()).unwrap_or_default()
+                        ),
+                        Color32::from_rgb(230, 110, 110),
+                    )
+                };
+                ui.label(RichText::new(txt).color(color));
+                ui.horizontal(|ui| {
+                    if ui.small_button("Supprimer le raccourci du bureau").clicked() {
+                        out.remove_quake_shortcut = true;
+                    }
+                    if ui.small_button("Actualiser l'état").clicked() {
+                        st.quake_status = None;
+                    }
+                });
+            }
+            None => {
+                ui.label(RichText::new("Aucun raccourci créé pour l'instant.").color(Color32::GRAY));
+            }
+        }
         if let Some(n) = &st.quake_note {
             ui.label(RichText::new(n).color(Color32::from_rgb(230, 180, 90)));
         }
-        hint(ui, "Cinnamon et GNOME sont configurés automatiquement. Ailleurs : liez la commande « novaterm --toggle » à une touche.");
+        hint(
+            ui,
+            "Cinnamon et GNOME sont configurés automatiquement ; changer de touche remplace l'ancienne. \
+             Ailleurs : liez la commande « novaterm --toggle » à une touche.",
+        );
         if ui.button("Essayer maintenant").clicked() {
             out.action = Some(Action::QuickTerminal);
         }
