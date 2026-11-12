@@ -365,7 +365,7 @@ fn apply_visuals(ctx: &egui::Context, theme: &Theme) {
         s.visuals = if luma > 140.0 { egui::Visuals::light() } else { egui::Visuals::dark() };
         s.visuals.panel_fill = Color32::TRANSPARENT;
         s.visuals.window_fill = surface_color(theme);
-        s.visuals.window_stroke = Stroke::new(1.0, Color32::from_black_alpha(60));
+        s.visuals.window_stroke = Stroke::new(1.0_f32, Color32::from_black_alpha(60));
         s.visuals.selection.bg_fill = rgb(theme.cursor).gamma_multiply(0.45);
     });
 }
@@ -393,7 +393,7 @@ fn window_button(ui: &mut egui::Ui, icon: WinIcon, tooltip: &str, fg: Color32, s
     };
     painter.rect_filled(rect, CornerRadius::same(7), bg);
     let color = if danger && resp.hovered() { Color32::WHITE } else { fg.gamma_multiply(0.9) };
-    let stroke = Stroke::new(1.6, color);
+    let stroke = Stroke::new(1.6_f32, color);
     let c = rect.center();
     let mid = egui::epaint::StrokeKind::Middle;
     match icon {
@@ -828,7 +828,7 @@ impl NovaApp {
         let mut activity: Vec<(u64, Option<bool>)> = Vec::new();
         for (id, pane) in self.panes.iter_mut() {
             let visible = active_ids.contains(id);
-            let finished: Vec<_> = pane.finished.drain(..).collect();
+            let finished = std::mem::take(&mut pane.finished);
             for f in finished {
                 let ok = f.exit == 0;
                 if !ok && (self.config.help_error_tips || self.config.help_typos) {
@@ -2067,8 +2067,7 @@ impl NovaApp {
         let ghost = Color32::from_rgba_unmultiplied(fg[0], fg[1], fg[2], (self.config.suggest_opacity.clamp(0.1, 1.0) * 255.0) as u8);
         let font = egui::FontId::new(self.config.font_size, egui::FontFamily::Name("MonoItalic".into()));
         let grid = pane.term.grid();
-        let mut col = cursor.column.0;
-        for c in rest.chars() {
+        for (col, c) in (cursor.column.0..).zip(rest.chars()) {
             if col >= cols {
                 break;
             }
@@ -2079,7 +2078,6 @@ impl NovaApp {
             }
             let pos = Pos2::new(origin.x + col as f32 * cw, origin.y + row as f32 * ch + ch * 0.5);
             painter.text(pos, egui::Align2::LEFT_CENTER, c, font.clone(), ghost);
-            col += 1;
         }
 
         if !self.config.suggest_list || self.suggest.items.len() < 2 {
@@ -2099,7 +2097,7 @@ impl NovaApp {
         let lp = ctx.layer_painter(egui::LayerId::new(egui::Order::Foreground, Id::new("suggest_list")));
         let accent = rgb(self.theme.cursor);
         lp.rect_filled(rect, CornerRadius::same(8), surface_color(&self.theme));
-        lp.rect_stroke(rect, CornerRadius::same(8), Stroke::new(1.0, accent.gamma_multiply(0.5)), egui::epaint::StrokeKind::Inside);
+        lp.rect_stroke(rect, CornerRadius::same(8), Stroke::new(1.0_f32, accent.gamma_multiply(0.5)), egui::epaint::StrokeKind::Inside);
         let mono = egui::FontId::monospace((self.config.font_size * 0.92).max(10.0));
         let fgc = rgb(fg);
         for (i, item) in items.iter().enumerate() {
@@ -2168,7 +2166,7 @@ impl NovaApp {
                 Some(_) => (red, Some(false)),
             };
             if self.config.blocks_separator && vb.top_row > 0 {
-                clip.line_segment([Pos2::new(pr.left() + 2.0, top - 1.0), Pos2::new(pr.right() - 2.0, top - 1.0)], Stroke::new(1.0, fg.gamma_multiply(0.08)));
+                clip.line_segment([Pos2::new(pr.left() + 2.0, top - 1.0), Pos2::new(pr.right() - 2.0, top - 1.0)], Stroke::new(1.0_f32, fg.gamma_multiply(0.08)));
             }
             if self.config.blocks_gutter {
                 let x = pr.left() + (self.config.padding * 0.5 - 1.5).max(0.0);
@@ -2192,7 +2190,7 @@ impl NovaApp {
                     .show(ctx, |ui| {
                         egui::Frame::NONE
                             .fill(surface_color(&self.theme))
-                            .stroke(Stroke::new(1.0, color.gamma_multiply(0.6)))
+                            .stroke(Stroke::new(1.0_f32, color.gamma_multiply(0.6)))
                             .corner_radius(CornerRadius::same(6))
                             .inner_margin(egui::Margin::symmetric(4, 1))
                             .show(ui, |ui| {
@@ -2235,7 +2233,7 @@ impl NovaApp {
                     egui::Area::new(Id::new(("tip_chip", id, vb.id))).order(egui::Order::Middle).pivot(egui::Align2::RIGHT_TOP).fixed_pos(pos).show(ctx, |ui| {
                         let btn = egui::Button::new(egui::RichText::new(label).small().color(rgb(self.theme.ansi[3])))
                             .fill(surface_color(&self.theme))
-                            .stroke(Stroke::new(1.0, rgb(self.theme.ansi[3]).gamma_multiply(0.6)))
+                            .stroke(Stroke::new(1.0_f32, rgb(self.theme.ansi[3]).gamma_multiply(0.6)))
                             .corner_radius(7);
                         if ui.add(btn).on_hover_text(&tips[0].detail).clicked() {
                             action = Some((id, vb.id, BlockAct::ShowTips));
@@ -2261,7 +2259,7 @@ impl NovaApp {
                 let size = galley.size() + Vec2::new(12.0, 4.0);
                 let rect = Rect::from_min_size(Pos2::new(pr.right() - self.config.padding - size.x - 4.0, cmd_y - size.y * 0.5), size);
                 clip.rect_filled(rect, CornerRadius::same(7), surface_color(&self.theme).gamma_multiply(0.92));
-                clip.rect_stroke(rect, CornerRadius::same(7), Stroke::new(1.0, color.gamma_multiply(0.45)), egui::epaint::StrokeKind::Inside);
+                clip.rect_stroke(rect, CornerRadius::same(7), Stroke::new(1.0_f32, color.gamma_multiply(0.45)), egui::epaint::StrokeKind::Inside);
                 clip.galley(rect.min + Vec2::new(6.0, 2.0), galley, color);
             }
         }
@@ -2577,7 +2575,7 @@ impl NovaApp {
                 egui::Frame::NONE
                     .fill(surface)
                     .corner_radius(CornerRadius::same(10))
-                    .stroke(Stroke::new(1.0, accent.gamma_multiply(0.6)))
+                    .stroke(Stroke::new(1.0_f32, accent.gamma_multiply(0.6)))
                     .shadow(egui::Shadow { offset: [0, 6], blur: 24, spread: 0, color: Color32::from_black_alpha(90) })
                     .inner_margin(egui::Margin::same(10))
                     .show(ui, |ui| {
@@ -3031,7 +3029,7 @@ impl NovaApp {
                         let label = egui::WidgetText::LayoutJob(job);
                         let btn = egui::Button::new(label)
                             .fill(if active { fg.gamma_multiply(0.12) } else { Color32::TRANSPARENT })
-                            .stroke(if active { Stroke::new(1.0, accent.gamma_multiply(0.6)) } else { Stroke::NONE });
+                            .stroke(if active { Stroke::new(1.0_f32, accent.gamma_multiply(0.6)) } else { Stroke::NONE });
                         let resp = ui.add(btn);
                         if resp.clicked() {
                             select = Some(i);
@@ -3474,7 +3472,7 @@ impl NovaApp {
                     painter.rect_stroke(
                         pr.shrink(0.5),
                         0.0,
-                        Stroke::new(1.0, rgb(self.theme.cursor).gamma_multiply(0.45)),
+                        Stroke::new(1.0_f32, rgb(self.theme.cursor).gamma_multiply(0.45)),
                         egui::epaint::StrokeKind::Middle,
                     );
                 }
@@ -3509,7 +3507,7 @@ impl NovaApp {
             // Diffusion du clavier : cadre rouge sur les panneaux concernés.
             if self.tabs.get(self.active).is_some_and(|t| t.broadcast) {
                 for (_, pr) in &leaves {
-                    painter.rect_stroke(pr.shrink(1.0), 0.0, Stroke::new(2.0, rgb(self.theme.ansi[1]).gamma_multiply(0.8)), egui::epaint::StrokeKind::Middle);
+                    painter.rect_stroke(pr.shrink(1.0), 0.0, Stroke::new(2.0_f32, rgb(self.theme.ansi[1]).gamma_multiply(0.8)), egui::epaint::StrokeKind::Middle);
                 }
             }
 
@@ -3616,7 +3614,7 @@ impl NovaApp {
                             let y = origin.y + (*row as f32 + 1.0) * self.metrics.cell_h - 1.5;
                             let x0 = origin.x + *s as f32 * self.metrics.cell_w;
                             let x1 = origin.x + *e as f32 * self.metrics.cell_w;
-                            painter.line_segment([Pos2::new(x0, y), Pos2::new(x1, y)], Stroke::new(1.2, rgb(self.theme.cursor)));
+                            painter.line_segment([Pos2::new(x0, y), Pos2::new(x1, y)], Stroke::new(1.2_f32, rgb(self.theme.cursor)));
                             ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
                         }
                     }
@@ -3739,7 +3737,7 @@ impl NovaApp {
             egui::Frame::NONE
                 .fill(surface)
                 .corner_radius(CornerRadius::same(8))
-                .stroke(Stroke::new(1.0, accent.gamma_multiply(0.5)))
+                .stroke(Stroke::new(1.0_f32, accent.gamma_multiply(0.5)))
                 .inner_margin(egui::Margin::same(6))
                 .show(ui, |ui| {
                     ui.horizontal(|ui| {
@@ -3808,7 +3806,7 @@ impl NovaApp {
                 egui::Frame::NONE
                     .fill(surface)
                     .corner_radius(CornerRadius::same(10))
-                    .stroke(Stroke::new(1.0, accent.gamma_multiply(0.6)))
+                    .stroke(Stroke::new(1.0_f32, accent.gamma_multiply(0.6)))
                     .shadow(egui::Shadow { offset: [0, 6], blur: 24, spread: 0, color: Color32::from_black_alpha(90) })
                     .inner_margin(egui::Margin::same(10))
                     .show(ui, |ui| {
@@ -3894,7 +3892,7 @@ impl NovaApp {
                 egui::Frame::NONE
                     .fill(surface)
                     .corner_radius(CornerRadius::same(10))
-                    .stroke(Stroke::new(1.0, accent.gamma_multiply(0.6)))
+                    .stroke(Stroke::new(1.0_f32, accent.gamma_multiply(0.6)))
                     .inner_margin(egui::Margin::same(12))
                     .show(ui, |ui| {
                         ui.label(egui::RichText::new(crate::i18n::tf("Renommer l'onglet {}", &[&(r.tab + 1)])).strong());
@@ -3939,7 +3937,7 @@ impl NovaApp {
             ui.add_space(10.0);
             ui.horizontal(|ui| {
                 let primary = egui::Button::new(egui::RichText::new(crate::i18n::tf("{} (Entrée)", &[&crate::i18n::tr(&c.button)])).strong())
-                    .stroke(Stroke::new(1.0, accent));
+                    .stroke(Stroke::new(1.0_f32, accent));
                 if ui.add(primary).clicked() {
                     yes = true;
                 }
@@ -3990,7 +3988,7 @@ impl NovaApp {
                     egui::Frame::NONE
                         .fill(fill)
                         .corner_radius(CornerRadius::same(10))
-                        .stroke(Stroke::new(1.0, accent.gamma_multiply(alpha * 0.5)))
+                        .stroke(Stroke::new(1.0_f32, accent.gamma_multiply(alpha * 0.5)))
                         .inner_margin(egui::Margin::symmetric(14, 8))
                         .show(ui, |ui| {
                             ui.label(egui::RichText::new(&t.message).color(fg.gamma_multiply(alpha)).strong());

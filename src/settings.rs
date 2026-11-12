@@ -204,7 +204,7 @@ fn card(ui: &mut egui::Ui, title: &str, add: impl FnOnce(&mut egui::Ui)) {
     let fill = if v.dark_mode { Color32::from_white_alpha(6) } else { Color32::from_black_alpha(8) };
     egui::Frame::NONE
         .fill(fill)
-        .stroke(egui::Stroke::new(1.0, v.widgets.noninteractive.bg_stroke.color.gamma_multiply(0.6)))
+        .stroke(egui::Stroke::new(1.0_f32, v.widgets.noninteractive.bg_stroke.color.gamma_multiply(0.6)))
         .corner_radius(10)
         .inner_margin(egui::Margin::symmetric(16, 12))
         .outer_margin(egui::Margin { left: 0, right: 0, top: 0, bottom: 10 })
@@ -1166,7 +1166,7 @@ fn page_snippets(ui: &mut egui::Ui, config: &mut Config, bindings: &Bindings, ou
         let v = ui.visuals().clone();
         egui::Frame::NONE
             .fill(if v.dark_mode { Color32::from_white_alpha(6) } else { Color32::from_black_alpha(8) })
-            .stroke(egui::Stroke::new(1.0, v.widgets.noninteractive.bg_stroke.color.gamma_multiply(0.6)))
+            .stroke(egui::Stroke::new(1.0_f32, v.widgets.noninteractive.bg_stroke.color.gamma_multiply(0.6)))
             .corner_radius(10)
             .inner_margin(egui::Margin::symmetric(14, 10))
             .outer_margin(egui::Margin { left: 0, right: 0, top: 0, bottom: 8 })

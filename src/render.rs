@@ -339,7 +339,7 @@ pub fn draw_cursor(
         painter.rect_stroke(
             cell,
             0.0,
-            Stroke::new(1.0, rgb(c).gamma_multiply(0.5)),
+            Stroke::new(1.0_f32, rgb(c).gamma_multiply(0.5)),
             egui::epaint::StrokeKind::Middle,
         );
         return;
@@ -409,7 +409,7 @@ pub fn draw_cursor(
             painter.rect_stroke(
                 Rect::from_min_size(Pos2::new(pos.x, cy), egui::vec2(w, ch)),
                 0.0,
-                Stroke::new(1.5, color),
+                Stroke::new(1.5_f32, color),
                 egui::epaint::StrokeKind::Middle,
             );
         }
@@ -438,7 +438,7 @@ pub fn pixel_to_point(
     let origin = rect.min + egui::vec2(config.padding, config.padding);
     let fx = ((pos.x - origin.x) / metrics.cell_w).max(0.0);
     let fy = ((pos.y - origin.y) / metrics.cell_h).max(0.0);
-    let col = (fx.floor() as usize).max(0);
+    let col = fx.floor() as usize;
     let row = fy.floor() as usize;
     let side = if fx.fract() > 0.5 { Side::Right } else { Side::Left };
     let vp = Point::new(row, Column(col));
