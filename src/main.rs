@@ -10,6 +10,7 @@ mod completions;
 mod config;
 mod fonts;
 mod guard;
+mod helpers;
 mod history;
 mod icon;
 mod images;
@@ -26,6 +27,7 @@ mod shell;
 mod stream;
 mod terminal;
 mod theme;
+mod update;
 
 use app::{NovaApp, StartOptions};
 
@@ -39,6 +41,8 @@ Options :
   --quake-shortcut TOUCHE   créer le raccourci du bureau (ex. F12, Ctrl+Alt+T)
   --quake-shortcut-remove   supprimer ce raccourci
   --imgcat FICHIER     afficher une image dans le terminal (--width N|N%|Npx)
+  --explain «COMMANDE» expliquer une commande (pages man, tldr ; hors ligne)
+  --check-update       vérifier si une nouvelle version est publiée
   --integrate          AppImage : ranger dans ~/Applications et ajouter au menu
   --unintegrate        AppImage : retirer du menu
   --safe-mode          démarrer avec la police intégrée (en cas de problème)
@@ -104,6 +108,28 @@ fn main() -> eframe::Result<()> {
             }
         }
         std::process::exit(if failed { 1 } else { 0 });
+    }
+    if let Some(cmd) = arg_value(&args, "--explain") {
+        let ex = helpers::explain(&cmd);
+        println!("{}\n", ex.command);
+        for p in &ex.parts {
+            println!("  {:<14} {}", p.token, p.text);
+        }
+        if !ex.examples.is_empty() {
+            println!("\n{}", ex.examples);
+        }
+        return Ok(());
+    }
+    if has("--check-update") {
+        match update::check(true) {
+            Ok(Some(u)) => println!("NovaTerm {} est disponible (vous avez {}) : {}", u.version, env!("CARGO_PKG_VERSION"), u.url),
+            Ok(None) => println!("NovaTerm {} est à jour.", env!("CARGO_PKG_VERSION")),
+            Err(e) => {
+                eprintln!("Vérification impossible : {e}");
+                std::process::exit(1);
+            }
+        }
+        return Ok(());
     }
     if has("--integrate") {
         match appimage::integrate(true) {

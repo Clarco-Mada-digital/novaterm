@@ -1,0 +1,38 @@
+# Vérification rapide à chaque push et pull request (aucun paquet, aucune release) :
+# tests + clippy sous Linux, compilation vérifiée pour Windows et macOS.
+name: CI
+
+on:
+  push:
+    branches: [main]
+    paths-ignore: ["**.md", "docs/**"]
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  linux:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+          targets: x86_64-pc-windows-gnu,x86_64-apple-darwin
+      - uses: Swatinem/rust-cache@v2
+      - name: Dépendances système
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y pkg-config libx11-dev libxcursor-dev libxrandr-dev libxi-dev \
+            libgl1-mesa-dev libxkbcommon-dev libwayland-dev
+      - name: Tests
+        run: cargo test
+      - name: Clippy (aucun avertissement toléré)
+        run: cargo clippy --all-targets -- -D warnings
+      - name: Compile pour Windows
+        run: cargo check --target x86_64-pc-windows-gnu
+      - name: Compile pour macOS
+        run: cargo check --target x86_64-apple-darwin

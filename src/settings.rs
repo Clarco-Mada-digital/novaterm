@@ -26,6 +26,7 @@ pub enum Page {
     Terminal,
     Mouse,
     Suggestions,
+    Helpers,
     Blocks,
     Links,
     Images,
@@ -41,7 +42,7 @@ impl Page {
     const GROUPS: [(&'static str, &'static [Page]); 5] = [
         ("APPARENCE", &[Page::Appearance, Page::Font, Page::Cursor, Page::Window]),
         ("TERMINAL", &[Page::Terminal, Page::Mouse, Page::Shortcuts]),
-        ("PRODUCTIVITÉ", &[Page::Suggestions, Page::Blocks, Page::Links, Page::Snippets, Page::Images]),
+        ("PRODUCTIVITÉ", &[Page::Suggestions, Page::Helpers, Page::Blocks, Page::Links, Page::Snippets, Page::Images]),
         ("ORGANISATION", &[Page::Session, Page::Quake]),
         ("SYSTÈME", &[Page::Advanced]),
     ];
@@ -55,6 +56,7 @@ impl Page {
             Page::Terminal => ">_",
             Page::Mouse => "🖱",
             Page::Suggestions => "✨",
+            Page::Helpers => "💡",
             Page::Blocks => "▤",
             Page::Links => "🔗",
             Page::Images => "🖼",
@@ -75,6 +77,7 @@ impl Page {
             Page::Terminal => "Terminal",
             Page::Mouse => "Souris",
             Page::Suggestions => "Suggestions",
+            Page::Helpers => "Aides",
             Page::Blocks => "Blocs & alertes",
             Page::Links => "Liens & éditeur",
             Page::Images => "Images",
@@ -95,6 +98,7 @@ impl Page {
             Page::Terminal => "Shell, historique, clavier et sélection.",
             Page::Mouse => "Focus, presse-papiers, défilement et souris dans les programmes.",
             Page::Suggestions => "Suite de commande proposée pendant la frappe et complétion intelligente.",
+            Page::Helpers => "Corrections et explications 100 % locales, sans IA.",
             Page::Blocks => "Chaque commande devient un bloc avec son statut ; alertes de fin de tâche.",
             Page::Links => "URL, fichiers et erreurs cliquables, et l'éditeur qui les ouvre.",
             Page::Images => "Afficher des images directement dans le terminal.",
@@ -116,6 +120,7 @@ impl Page {
             Page::Terminal => "shell zsh bash powershell cmd wsl dossier historique scrollback clavier ctrl+c ctrl+v coller sélection mots diffusion broadcast cloche bell",
             Page::Mouse => "souris focus suit copier sélection clic milieu droit molette défilement zoom lien htop vim",
             Page::Suggestions => "suggestion autosuggestion historique complétion completion git docker npm intégration shell zsh",
+            Page::Helpers => "aide astuce erreur faute frappe typo corriger expliquer man tldr",
             Page::Blocks => "bloc commande statut durée badge notification alerte son fin tâche onglet pastille",
             Page::Links => "lien url fichier chemin erreur éditeur vscode code vim nano ctrl+clic",
             Page::Images => "image imgcat kitty iterm photo svg png",
@@ -348,6 +353,7 @@ fn body(
             Page::Terminal => page_terminal(ui, config),
             Page::Mouse => page_mouse(ui, config),
             Page::Suggestions => page_suggestions(ui, config, info, out, bindings),
+            Page::Helpers => page_helpers(ui, config, bindings),
             Page::Blocks => page_blocks(ui, config, bindings),
             Page::Links => page_links(ui, config),
             Page::Images => page_images(ui, config),
@@ -849,6 +855,24 @@ fn page_suggestions(ui: &mut egui::Ui, config: &mut Config, info: &SettingsInfo,
     });
 }
 
+fn page_helpers(ui: &mut egui::Ui, config: &mut Config, bindings: &Bindings) {
+    card(ui, "Aides intelligentes (sans IA)", |ui| {
+        hint(ui, "Tout est calculé sur votre machine : rien n'est envoyé sur Internet, et aucune commande n'est exécutée sans vous.");
+        ui.checkbox(&mut config.help_typos, "Proposer une correction pour les fautes de frappe (gti status → git status)");
+        ui.checkbox(&mut config.help_error_tips, "Astuces sur les commandes en échec (port occupé, module manquant, droits…)");
+        ui.checkbox(&mut config.help_explain, "« Expliquer la commande » (pages man et tldr)");
+        hint(
+            ui,
+            &format!(
+                "Corriger la dernière commande : {} · Expliquer : {} (ou « ? » au survol d'une commande)",
+                bindings.first_shortcut(Action::FixLastCommand),
+                bindings.first_shortcut(Action::ExplainCommand)
+            ),
+        );
+        hint(ui, "Pour des exemples en plus des explications : sudo apt install tldr");
+    });
+}
+
 fn page_blocks(ui: &mut egui::Ui, config: &mut Config, bindings: &Bindings) {
     card(ui, "Blocs de commandes", |ui| {
         hint(ui, "Chaque commande et sa sortie forment un bloc (nécessite l'intégration shell, page Suggestions).");
@@ -1254,6 +1278,20 @@ fn page_advanced(ui: &mut egui::Ui, config: &mut Config, st: &mut SettingsUi, ou
             }
         });
     }
+    card(ui, "Mises à jour", |ui| {
+        ui.label(format!("Version installée : {}", env!("CARGO_PKG_VERSION")));
+        ui.checkbox(&mut config.update_check, "Vérifier automatiquement les nouvelles versions (au démarrage, puis toutes les 6 h)");
+        ui.checkbox(&mut config.update_prerelease, "Proposer aussi les versions bêta");
+        hint(ui, "Seule la page publique des versions de GitHub est consultée ; rien d'autre n'est envoyé. L'AppImage se met à jour en un clic (fichier vérifié par SHA-256).");
+        ui.horizontal(|ui| {
+            if ui.button("Rechercher maintenant").clicked() {
+                out.action = Some(Action::CheckUpdates);
+            }
+            if !config.update_skip.is_empty() && ui.small_button(format!("Ne plus ignorer la {}", config.update_skip)).clicked() {
+                config.update_skip.clear();
+            }
+        });
+    });
     card(ui, "Informations", |ui| {
         ui.label(format!("NovaTerm {} · {} {}", env!("CARGO_PKG_VERSION"), std::env::consts::OS, std::env::consts::ARCH));
         ui.label(format!("Shell : {}", if config.shell.is_empty() { platform::default_shell() } else { config.shell.clone() }));

@@ -370,6 +370,22 @@ pub struct Config {
     /// Arrêter le clignotement du curseur après N secondes d'inactivité (0 = jamais).
     pub cursor_blink_timeout: u32,
 
+    // --- Mises à jour ---
+    /// Vérifier régulièrement si une nouvelle version est publiée (GitHub).
+    pub update_check: bool,
+    /// Proposer aussi les versions bêta.
+    pub update_prerelease: bool,
+    /// Version ignorée par l'utilisateur.
+    pub update_skip: String,
+
+    // --- Aides sans IA ---
+    /// Proposer une correction quand une commande est mal tapée.
+    pub help_typos: bool,
+    /// Astuces sur les commandes en échec (port occupé, module manquant…).
+    pub help_error_tips: bool,
+    /// « Expliquer la commande » (pages man, tldr).
+    pub help_explain: bool,
+
     /// Proposer d'ajouter l'AppImage au menu au lancement.
     pub appimage_prompt: bool,
 
@@ -486,6 +502,12 @@ impl Default for Config {
             quake_hotkey: "F12".to_string(),
             cursor_blink_timeout: 15,
             appimage_prompt: true,
+            update_check: true,
+            update_prerelease: true,
+            update_skip: String::new(),
+            help_typos: true,
+            help_error_tips: true,
+            help_explain: true,
             osc52_write: true,
             osc52_read: false,
             broadcast_scope: BroadcastScope::Tab,

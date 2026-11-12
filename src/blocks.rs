@@ -91,6 +91,7 @@ impl Block {
 /// Commande terminée, à signaler (notification, onglet).
 #[derive(Clone, Debug)]
 pub struct Finished {
+    pub id: u32,
     pub command: String,
     pub exit: i32,
     pub duration: Duration,

@@ -95,6 +95,10 @@ pub enum Action {
     SaveProfile,
     ImportTheme,
     QuickTerminal,
+    // Aides
+    FixLastCommand,
+    ExplainCommand,
+    CheckUpdates,
 }
 
 pub const ALL_ACTIONS: &[Action] = &[
@@ -177,6 +181,9 @@ pub const ALL_ACTIONS: &[Action] = &[
     Action::SaveProfile,
     Action::ImportTheme,
     Action::QuickTerminal,
+    Action::FixLastCommand,
+    Action::ExplainCommand,
+    Action::CheckUpdates,
 ];
 
 impl Action {
@@ -263,6 +270,9 @@ impl Action {
             SaveProfile => "save_profile",
             ImportTheme => "import_theme",
             QuickTerminal => "quick_terminal",
+            FixLastCommand => "fix_last_command",
+            ExplainCommand => "explain_command",
+            CheckUpdates => "check_updates",
         }
     }
 
@@ -353,6 +363,9 @@ impl Action {
             SaveProfile => "Enregistrer la disposition comme profil",
             ImportTheme => "Importer un thème…",
             QuickTerminal => "Terminal rapide (afficher / masquer)",
+            FixLastCommand => "Corriger la dernière commande (astuce)",
+            ExplainCommand => "Expliquer la commande (hors ligne)",
+            CheckUpdates => "Rechercher une mise à jour",
         }
     }
 
@@ -373,7 +386,8 @@ impl Action {
             FontInc | FontDec | FontReset => "Police",
             HistorySearch | ToggleSuggestions => "Suggestions",
             PrevCommand | NextCommand | CopyLastOutput | CopyLastCommand | RerunLast => "Blocs de commandes",
-            ToggleBroadcast | Snippets | Profiles | SaveProfile | ImportTheme | QuickTerminal => "Outils",
+            ToggleBroadcast | Snippets | Profiles | SaveProfile | ImportTheme | QuickTerminal | CheckUpdates => "Outils",
+            FixLastCommand | ExplainCommand => "Aides",
             _ => "Fenêtre",
         }
     }
@@ -609,6 +623,9 @@ pub fn default_bindings(action: Action) -> Vec<KeyCombo> {
         SaveProfile => &[],
         ImportTheme => &[],
         QuickTerminal => &[],
+        FixLastCommand => &["Ctrl+Alt+F"],
+        ExplainCommand => &["Ctrl+Alt+X"],
+        CheckUpdates => &[],
     };
     list.iter().map(|s| c(s)).collect()
 }

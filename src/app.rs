@@ -119,6 +119,8 @@ struct Suggest {
 /// Action déclenchée depuis la barre d'un bloc de commande.
 #[derive(Clone, Copy)]
 enum BlockAct {
+    ShowTips,
+    Explain,
     CopyCommand,
     CopyOutput,
     Rerun,
@@ -271,6 +273,24 @@ pub struct NovaApp {
     appimage_offer: Option<PathBuf>,
     /// Messages de tâches de fond (ex. réparation du raccourci F12).
     notice_rx: Option<Receiver<String>>,
+    /// Astuces calculées en arrière-plan : (panneau, bloc, astuces).
+    tips_tx: std::sync::mpsc::Sender<(u64, u32, Vec<crate::helpers::Tip>)>,
+    tips_rx: Receiver<(u64, u32, Vec<crate::helpers::Tip>)>,
+    /// Fenêtre d'astuces ouverte : (panneau, bloc).
+    tip_popup: Option<(u64, u32)>,
+    /// Explication en cours / affichée.
+    explain_rx: Option<Receiver<crate::helpers::Explanation>>,
+    explanation: Option<crate::helpers::Explanation>,
+    explain_open: bool,
+    // --- Mises à jour ---
+    update_rx: Option<Receiver<Result<Option<crate::update::UpdateInfo>, String>>>,
+    update_info: Option<crate::update::UpdateInfo>,
+    update_manual: bool,
+    update_hidden: bool,
+    last_update_check: f64,
+    update_install_rx: Option<Receiver<Result<PathBuf, String>>>,
+    /// AppImage mise à jour, prête à être relancée.
+    update_ready: Option<PathBuf>,
 }
 
 /// Étape du mode démo (`NOVATERM_DEMO=fichier`). Les entrées sont injectées dans
@@ -454,6 +474,7 @@ impl NovaApp {
     pub fn new(cc: &eframe::CreationContext<'_>, start: StartOptions) -> Self {
         let ctx = cc.egui_ctx.clone();
         let mut config = start.config;
+        let tips_chan = std::sync::mpsc::channel();
         let font_catalog = (!config.font_family.is_empty()).then(fonts::discover);
         let mut font_error = None;
         if let Err(e) = fonts::install(&ctx, &config.font_family, font_catalog.as_ref()) {
@@ -542,6 +563,19 @@ impl NovaApp {
             system_dark: None,
             demo: std::env::var("NOVATERM_DEMO").ok().and_then(|p| Demo::load(&p)),
             appimage_offer: crate::appimage::current().filter(|p| !crate::appimage::is_integrated(p)),
+            tips_tx: tips_chan.0,
+            tips_rx: tips_chan.1,
+            tip_popup: None,
+            explain_rx: None,
+            explanation: None,
+            explain_open: false,
+            update_rx: None,
+            update_info: None,
+            update_manual: false,
+            update_hidden: false,
+            last_update_check: -1.0e9,
+            update_install_rx: None,
+            update_ready: None,
             notice_rx: {
                 // Répare en arrière-plan un raccourci F12 cassé (ancien emplacement, AppImage…).
                 let (tx, rx) = std::sync::mpsc::channel();
@@ -787,8 +821,25 @@ impl NovaApp {
         let mut activity: Vec<(u64, Option<bool>)> = Vec::new();
         for (id, pane) in self.panes.iter_mut() {
             let visible = active_ids.contains(id);
-            for f in pane.finished.drain(..) {
+            let finished: Vec<_> = pane.finished.drain(..).collect();
+            for f in finished {
                 let ok = f.exit == 0;
+                if !ok && (self.config.help_error_tips || self.config.help_typos) {
+                    let output = pane.block_output(f.id).unwrap_or_default();
+                    let tail: String = output.lines().rev().take(40).collect::<Vec<_>>().into_iter().rev().collect::<Vec<_>>().join("\n");
+                    let tx = self.tips_tx.clone();
+                    let (pid, bid, cmd, exit) = (*id, f.id, f.command.clone(), f.exit);
+                    let (typos, errors) = (self.config.help_typos, self.config.help_error_tips);
+                    let ctx2 = ctx.clone();
+                    std::thread::spawn(move || {
+                        let mut tips = crate::helpers::tips_for(&cmd, &tail, exit, &|_| 0);
+                        tips.retain(|t| if t.title == "Faute de frappe ?" { typos } else { errors });
+                        if !tips.is_empty() {
+                            let _ = tx.send((pid, bid, tips));
+                            ctx2.request_repaint();
+                        }
+                    });
+                }
                 if !visible {
                     activity.push((*id, Some(ok)));
                 }
@@ -1611,6 +1662,35 @@ impl NovaApp {
                     self.history_popup = Some(HistoryPopup { pane, query, selected: 0, focus: true });
                 }
             }
+            FixLastCommand => {
+                let found = self.focused_id().and_then(|pid| {
+                    let p = self.panes.get(&pid)?;
+                    let last = p.blocks.iter().rev().find(|b| b.finished.is_some())?;
+                    let fix = p.tips.get(&last.id)?.iter().find_map(|t| t.fix.clone())?;
+                    Some((pid, fix))
+                });
+                match found {
+                    Some((pid, fix)) => self.insert_command(pid, &fix, false),
+                    None => self.toast("Aucune correction proposée pour la dernière commande"),
+                }
+            }
+            CheckUpdates => self.start_update_check(true),
+            ExplainCommand => {
+                if !self.config.help_explain {
+                    self.toast("« Expliquer la commande » est désactivé (Paramètres → Aides)");
+                } else {
+                    let target = self
+                        .selection_text()
+                        .filter(|t| !t.contains('\n'))
+                        .or_else(|| self.focused_id().and_then(|id| self.panes.get(&id)).and_then(|p| p.cmdline.as_ref()).map(|(_, b)| b.clone()))
+                        .filter(|t| !t.trim().is_empty())
+                        .or_else(|| self.last_block().and_then(|(p, b)| self.block_command(p, b)));
+                    match target {
+                        Some(cmd) => self.start_explain(cmd),
+                        None => self.toast("Rien à expliquer : tapez ou sélectionnez une commande"),
+                    }
+                }
+            }
             PrevCommand => self.jump_command(true),
             NextCommand => self.jump_command(false),
             CopyLastOutput => match self.last_block() {
@@ -2107,6 +2187,9 @@ impl NovaApp {
                                     if b(ui, "📋 sortie", "Copier la sortie") {
                                         action = Some((id, vb.id, BlockAct::CopyOutput));
                                     }
+                                    if self.config.help_explain && b(ui, "?", "Expliquer la commande (hors ligne)") {
+                                        action = Some((id, vb.id, BlockAct::Explain));
+                                    }
                                     if b(ui, "↻", "Relancer la commande") {
                                         action = Some((id, vb.id, BlockAct::Rerun));
                                     }
@@ -2118,6 +2201,25 @@ impl NovaApp {
                     });
                 continue;
             }
+            // 💡 sur un bloc en échec qui a des astuces : toujours visible et cliquable.
+            let mut chip_w = 0.0;
+            if let Some(tips) = pane.tips.get(&vb.id).filter(|t| !t.is_empty()) {
+                if cmd_y > pr.top() && cmd_y < pr.bottom() {
+                    let label = if tips.len() == 1 { "💡 astuce".to_string() } else { format!("💡 {} astuces", tips.len()) };
+                    let pos = Pos2::new(pr.right() - self.config.padding - 4.0 - 118.0, cmd_y - 11.0);
+                    chip_w = 124.0;
+                    egui::Area::new(Id::new(("tip_chip", id, vb.id))).order(egui::Order::Middle).pivot(egui::Align2::RIGHT_TOP).fixed_pos(pos).show(ctx, |ui| {
+                        let btn = egui::Button::new(egui::RichText::new(label).small().color(rgb(self.theme.ansi[3])))
+                            .fill(surface_color(&self.theme))
+                            .stroke(Stroke::new(1.0, rgb(self.theme.ansi[3]).gamma_multiply(0.6)))
+                            .corner_radius(7);
+                        if ui.add(btn).on_hover_text(&tips[0].detail).clicked() {
+                            action = Some((id, vb.id, BlockAct::ShowTips));
+                        }
+                    });
+                }
+            }
+            let _ = chip_w;
             let elapsed = block.elapsed();
             let show = match self.config.blocks_badges {
                 BadgeMode::Always => true,
@@ -2145,8 +2247,268 @@ impl NovaApp {
         action
     }
 
+    fn start_update_check(&mut self, manual: bool) {
+        if self.update_rx.is_some() {
+            return;
+        }
+        self.update_manual = manual;
+        self.last_update_check = self.ctx.input(|i| i.time);
+        let pre = self.config.update_prerelease;
+        let (tx, rx) = std::sync::mpsc::channel();
+        let ctx = self.ctx.clone();
+        std::thread::spawn(move || {
+            let _ = tx.send(crate::update::check(pre));
+            ctx.request_repaint();
+        });
+        self.update_rx = Some(rx);
+        if manual {
+            self.toast("Recherche d'une mise à jour…");
+        }
+    }
+
+    /// Vérification périodique et réception des résultats.
+    fn poll_updates(&mut self, time: f64) {
+        if self.config.update_check && !self.quake && time > 8.0 && time - self.last_update_check > 6.0 * 3600.0 {
+            self.start_update_check(false);
+        }
+        if let Some(rx) = &self.update_rx {
+            if let Ok(res) = rx.try_recv() {
+                self.update_rx = None;
+                match res {
+                    Ok(Some(info)) if self.update_manual || info.version.to_string() != self.config.update_skip => {
+                        self.update_hidden = false;
+                        self.update_info = Some(info);
+                    }
+                    Ok(_) => {
+                        if self.update_manual {
+                            self.toast(format!("NovaTerm {} est à jour ✔", env!("CARGO_PKG_VERSION")));
+                        }
+                    }
+                    Err(e) => {
+                        if self.update_manual {
+                            self.toast(format!("Mise à jour : {e}"));
+                        }
+                    }
+                }
+            }
+        }
+        if let Some(rx) = &self.update_install_rx {
+            if let Ok(res) = rx.try_recv() {
+                self.update_install_rx = None;
+                match res {
+                    Ok(path) => {
+                        self.update_ready = Some(path);
+                        self.update_info = None;
+                    }
+                    Err(e) => self.toast(format!("Mise à jour échouée : {e}")),
+                }
+            }
+        }
+    }
+
+    /// Bandeau « nouvelle version » / « redémarrer pour terminer ».
+    fn render_update_banner(&mut self, ctx: &egui::Context) {
+        if self.quake {
+            return;
+        }
+        let accent = rgb(self.theme.cursor);
+        let fg = rgb(self.theme.foreground);
+        if let Some(path) = self.update_ready.clone() {
+            let mut restart = false;
+            egui::TopBottomPanel::top("update_ready").frame(egui::Frame::NONE.fill(rgb(self.theme.ansi[2]).gamma_multiply(0.22)).inner_margin(egui::Margin::symmetric(10, 6))).show(ctx, |ui| {
+                ui.horizontal_wrapped(|ui| {
+                    ui.label(egui::RichText::new("✔ Mise à jour installée. Redémarrez NovaTerm pour l'utiliser (vos onglets sont restaurés).").color(fg));
+                    if ui.button("Redémarrer maintenant").clicked() {
+                        restart = true;
+                    }
+                });
+            });
+            if restart {
+                self.save_session();
+                if std::process::Command::new(&path).spawn().is_ok() {
+                    self.allow_close = true;
+                    ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+                }
+            }
+            return;
+        }
+        let Some(info) = self.update_info.clone() else { return };
+        if self.update_hidden {
+            return;
+        }
+        let appimage = crate::appimage::current().filter(|_| info.appimage_url.is_some());
+        let busy = self.update_install_rx.is_some();
+        let mut choice = 0;
+        egui::TopBottomPanel::top("update_banner").frame(egui::Frame::NONE.fill(accent.gamma_multiply(0.18)).inner_margin(egui::Margin::symmetric(10, 6))).show(ctx, |ui| {
+            ui.horizontal_wrapped(|ui| {
+                let beta = if info.prerelease { " (bêta)" } else { "" };
+                ui.label(egui::RichText::new(format!("🎉 NovaTerm {}{beta} est disponible — vous avez {}.", info.version, env!("CARGO_PKG_VERSION"))).color(fg).strong());
+                if busy {
+                    ui.spinner();
+                    ui.label("Téléchargement et vérification…");
+                } else if appimage.is_some() {
+                    if ui.button("Mettre à jour maintenant").clicked() {
+                        choice = 1;
+                    }
+                } else {
+                    ui.label(egui::RichText::new(crate::update::how_to_update(&info)).color(fg.gamma_multiply(0.8)));
+                    if ui.button("Télécharger").clicked() {
+                        choice = 2;
+                    }
+                }
+                if ui.small_button("Nouveautés").on_hover_text(info.notes.chars().take(400).collect::<String>()).clicked() {
+                    choice = 2;
+                }
+                if ui.small_button("Plus tard").clicked() {
+                    choice = 3;
+                }
+                if ui.small_button("Ignorer cette version").clicked() {
+                    choice = 4;
+                }
+            });
+        });
+        match choice {
+            1 => {
+                if let Some(app) = appimage {
+                    let (tx, rx) = std::sync::mpsc::channel();
+                    let ctx2 = ctx.clone();
+                    let info2 = info.clone();
+                    std::thread::spawn(move || {
+                        let _ = tx.send(crate::update::update_appimage(&info2, &app));
+                        ctx2.request_repaint();
+                    });
+                    self.update_install_rx = Some(rx);
+                }
+            }
+            2 => open_external(&info.url),
+            3 => self.update_hidden = true,
+            4 => {
+                self.config.update_skip = info.version.to_string();
+                self.config_dirty = true;
+                self.update_info = None;
+            }
+            _ => {}
+        }
+    }
+
+    fn start_explain(&mut self, cmd: String) {
+        let (tx, rx) = std::sync::mpsc::channel();
+        let ctx = self.ctx.clone();
+        std::thread::spawn(move || {
+            let _ = tx.send(crate::helpers::explain(&cmd));
+            ctx.request_repaint();
+        });
+        self.explain_rx = Some(rx);
+        self.explanation = None;
+        self.explain_open = true;
+    }
+
+    /// Fenêtre « Expliquer la commande ».
+    fn render_explain(&mut self, ctx: &egui::Context) {
+        if !self.explain_open {
+            return;
+        }
+        let mut open = true;
+        let mut example_cmd: Option<String> = None;
+        egui::Window::new("💡 Explication")
+            .open(&mut open)
+            .collapsible(false)
+            .resizable(true)
+            .default_width(560.0)
+            .show(ctx, |ui| match &self.explanation {
+                None => {
+                    ui.horizontal(|ui| {
+                        ui.spinner();
+                        ui.label("Lecture des pages d'aide locales…");
+                    });
+                }
+                Some(ex) => {
+                    ui.label(egui::RichText::new(&ex.command).monospace().strong());
+                    ui.add_space(6.0);
+                    egui::Grid::new("explain_grid").num_columns(2).spacing([14.0, 6.0]).striped(true).show(ui, |ui| {
+                        for p in &ex.parts {
+                            ui.label(egui::RichText::new(&p.token).monospace().color(rgb(self.theme.cursor)));
+                            ui.add(egui::Label::new(&p.text).wrap());
+                            ui.end_row();
+                        }
+                    });
+                    if !ex.examples.is_empty() {
+                        ui.separator();
+                        ui.label(egui::RichText::new("Exemples (tldr)").strong());
+                        egui::ScrollArea::vertical().max_height(220.0).show(ui, |ui| {
+                            for line in ex.examples.lines() {
+                                let t = line.trim();
+                                // Lignes de commande tldr : cliquables pour les insérer.
+                                if t.starts_with('$') || (line.starts_with("    ") && !t.ends_with(':')) {
+                                    let c = t.trim_start_matches('$').trim().to_string();
+                                    if ui.link(egui::RichText::new(&c).monospace()).on_hover_text("Insérer dans le terminal").clicked() {
+                                        example_cmd = Some(c);
+                                    }
+                                } else {
+                                    ui.label(t);
+                                }
+                            }
+                        });
+                    } else {
+                        ui.label(egui::RichText::new("Astuce : installez « tldr » pour voir aussi des exemples (sudo apt install tldr).").small().color(Color32::GRAY));
+                    }
+                    ui.label(egui::RichText::new("Explication 100 % locale : pages man et tldr de votre système, sans IA ni Internet.").small().color(Color32::GRAY));
+                }
+            });
+        if let Some(c) = example_cmd {
+            if let Some(id) = self.focused_id() {
+                self.insert_command(id, &c, false);
+            }
+        }
+        if !open {
+            self.explain_open = false;
+        }
+    }
+
+    /// Fenêtre des astuces d'un bloc en échec.
+    fn render_tips(&mut self, ctx: &egui::Context) {
+        let Some((pid, bid)) = self.tip_popup else { return };
+        let Some(tips) = self.panes.get(&pid).and_then(|p| p.tips.get(&bid)).cloned() else {
+            self.tip_popup = None;
+            return;
+        };
+        let mut open = true;
+        let mut insert: Option<String> = None;
+        egui::Window::new("💡 Astuces").open(&mut open).collapsible(false).resizable(false).default_width(480.0).show(ctx, |ui| {
+            for t in &tips {
+                ui.label(egui::RichText::new(&t.title).strong());
+                ui.add(egui::Label::new(&t.detail).wrap());
+                if let Some(fix) = &t.fix {
+                    ui.horizontal(|ui| {
+                        ui.label(egui::RichText::new(fix).monospace().color(rgb(self.theme.cursor)));
+                        if ui.small_button("Insérer").on_hover_text("Placer la commande sur la ligne, sans l'exécuter").clicked() {
+                            insert = Some(fix.clone());
+                        }
+                        if ui.small_button("📋").on_hover_text("Copier").clicked() {
+                            ui.ctx().copy_text(fix.clone());
+                        }
+                    });
+                }
+                ui.add_space(8.0);
+            }
+            ui.label(egui::RichText::new("Astuces locales, sans IA. Rien n'est exécuté sans vous.").small().color(Color32::GRAY));
+        });
+        if let Some(fix) = insert {
+            self.insert_command(pid, &fix, false);
+            self.tip_popup = None;
+        } else if !open {
+            self.tip_popup = None;
+        }
+    }
+
     fn block_action(&mut self, pane_id: u64, block: u32, act: BlockAct) {
         match act {
+            BlockAct::ShowTips => self.tip_popup = Some((pane_id, block)),
+            BlockAct::Explain => {
+                if let Some(cmd) = self.block_command(pane_id, block) {
+                    self.start_explain(cmd);
+                }
+            }
             BlockAct::CopyCommand => {
                 if let Some(cmd) = self.block_command(pane_id, block) {
                     self.ctx.copy_text(cmd);
@@ -4149,6 +4511,23 @@ impl eframe::App for NovaApp {
 
         self.metrics = render::compute_metrics(ctx, &self.config);
         self.run_demo(ctx, time);
+        self.poll_updates(time);
+        while let Ok((pid, bid, tips)) = self.tips_rx.try_recv() {
+            if let Some(t) = tips.iter().find(|t| t.title == "Faute de frappe ?") {
+                let key = self.bindings.first_shortcut(Action::FixLastCommand);
+                self.toast(format!("💡 {}  ({key} pour corriger)", t.detail));
+            }
+            if let Some(p) = self.panes.get_mut(&pid) {
+                p.tips.insert(bid, tips);
+                p.dirty = true;
+            }
+        }
+        if let Some(rx) = &self.explain_rx {
+            if let Ok(ex) = rx.try_recv() {
+                self.explanation = Some(ex);
+                self.explain_rx = None;
+            }
+        }
         if let Some(msg) = self.notice_rx.as_ref().and_then(|rx| rx.try_recv().ok()) {
             self.toast(msg);
             self.notice_rx = None;
@@ -4196,6 +4575,7 @@ impl eframe::App for NovaApp {
         }
         self.render_banner(ctx);
         self.render_appimage_offer(ctx);
+        self.render_update_banner(ctx);
         self.render_tab_bar(ctx);
         self.render_status_bar(ctx, time);
         self.render_central(ctx, time);
@@ -4277,6 +4657,8 @@ impl eframe::App for NovaApp {
             }
         }
         self.render_palette(ctx);
+        self.render_tips(ctx);
+        self.render_explain(ctx);
         self.render_save_profile(ctx);
         if self.theme_import.is_some() {
             if let Some(path) = settings::show_file_picker(ctx, &mut self.theme_import, "Importer un thème", settings::is_theme_file) {

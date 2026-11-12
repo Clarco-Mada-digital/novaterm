@@ -160,6 +160,8 @@ pub struct Pane {
     pub vis_images: Vec<(i32, usize, u32)>,
     /// Dernière activité (sortie du programme), pour l'indicateur d'onglet.
     pub last_output: Instant,
+    /// Astuces calculées pour les blocs en échec (id du bloc → astuces).
+    pub tips: HashMap<u32, Vec<crate::helpers::Tip>>,
     /// Dernière notification demandée par un programme (anti-spam).
     last_app_notify: Option<Instant>,
 }
@@ -280,6 +282,7 @@ impl Pane {
             vis_images: Vec::new(),
             last_output: Instant::now(),
             last_app_notify: None,
+            tips: HashMap::new(),
         })
     }
 
@@ -450,7 +453,7 @@ impl Pane {
                     if let Some(b) = self.blocks.iter_mut().rev().find(|b| b.id == id) {
                         let d = b.started.elapsed();
                         b.finished = Some((code, d));
-                        self.finished.push(Finished { command: b.command.clone(), exit: code, duration: d });
+                        self.finished.push(Finished { id, command: b.command.clone(), exit: code, duration: d });
                     }
                 }
             }

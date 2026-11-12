@@ -251,6 +251,12 @@ fn spec(cmd: &str, sub: Option<&str>) -> Option<(Pairs, Pairs)> {
 
 type Candidates = Vec<(String, String)>;
 
+/// Description d'une sous-commande connue (« git status » → « état du dépôt »).
+pub fn describe(cmd: &str, sub: &str) -> Option<&'static str> {
+    let (subs, opts) = spec(cmd, None)?;
+    subs.iter().chain(opts.iter()).find(|(name, _)| *name == sub).map(|(_, d)| *d)
+}
+
 /// Cache des sources dynamiques (évite de relancer git à chaque touche).
 #[derive(Default)]
 pub struct Completer {
