@@ -379,7 +379,9 @@ GitHub Actions construit alors Linux (x86_64 et ARM64 : `.deb`, `.rpm`,
 `.AppImage`, `.tar.gz`), Windows (installateur et `.zip`) et macOS (`.dmg`
 universel), puis publie la [Release](https://github.com/Clarco-Mada-digital/novaterm/releases)
 avec un `SHA256SUMS.txt`. Construction de test sans Release : onglet **Actions →
-Paquets → Run workflow**.
+Paquets → Run workflow**. Si une construction a échoué après l'envoi du tag, corrigez
+puis relancez-la depuis ce même bouton en indiquant le tag (ex. `v0.0.1`) : la
+Release est publiée sans toucher au tag (ou `gh workflow run release.yml -f tag=v0.0.1`).
 
 ## 🗺 Feuille de route
 
