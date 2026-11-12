@@ -18,6 +18,8 @@ pub enum SeqKind {
     Kitty,
     /// Dossier courant (OSC 7;file://hôte/chemin).
     Cwd,
+    /// Intégration shell standard (OSC 133;A|B|C|D).
+    Osc133,
 }
 
 const PREFIXES: &[(&[u8], SeqKind, usize)] = &[
@@ -27,6 +29,7 @@ const PREFIXES: &[(&[u8], SeqKind, usize)] = &[
     (b"\x1b]9;", SeqKind::Notify9, 64 * 1024),
     (b"\x1b_G", SeqKind::Kitty, 96 * 1024 * 1024),
     (b"\x1b]7;", SeqKind::Cwd, 8 * 1024),
+    (b"\x1b]133;", SeqKind::Osc133, 8 * 1024),
 ];
 
 #[derive(Debug, PartialEq, Eq)]
@@ -198,6 +201,27 @@ mod tests {
             let (d, s) = collect(&mut f, &[&input[..cut], &input[cut..]]);
             assert_eq!(d, b"xy\x1b]0;title\x07z", "coupure {cut}");
             assert_eq!(s, vec![(SeqKind::ITerm, b"File=inline=1:AAAA".to_vec())], "coupure {cut}");
+        }
+    }
+
+    /// OSC 133 et OSC 1337 partagent leur début : ils ne doivent pas se confondre,
+    /// y compris quand la lecture est coupée au milieu du préfixe.
+    #[test]
+    fn osc133_vs_iterm() {
+        let input = b"a\x1b]133;A\x1b\\b\x1b]1337;File=inline=1:AA\x07c\x1b]133;D;1\x07d";
+        for cut in 0..input.len() {
+            let mut f = SeqFilter::default();
+            let (d, s) = collect(&mut f, &[&input[..cut], &input[cut..]]);
+            assert_eq!(d, b"abcd", "coupure {cut}");
+            assert_eq!(
+                s,
+                vec![
+                    (SeqKind::Osc133, b"A".to_vec()),
+                    (SeqKind::ITerm, b"File=inline=1:AA".to_vec()),
+                    (SeqKind::Osc133, b"D;1".to_vec()),
+                ],
+                "coupure {cut}"
+            );
         }
     }
 

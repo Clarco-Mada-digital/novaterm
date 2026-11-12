@@ -227,6 +227,92 @@ const KUBECTL: Pairs = &[
     ("scale", "changer le nombre de répliques"),
 ];
 
+const WINGET: Pairs = &[
+    ("install", "installer un paquet"),
+    ("uninstall", "désinstaller"),
+    ("upgrade", "mettre à jour (--all pour tout)"),
+    ("search", "rechercher"),
+    ("show", "détails d'un paquet"),
+    ("list", "paquets installés"),
+    ("source", "sources de paquets"),
+    ("export", "exporter la liste"),
+    ("import", "installer depuis une liste"),
+    ("pin", "épingler une version"),
+];
+const SCOOP: Pairs = &[
+    ("install", "installer"),
+    ("uninstall", "désinstaller"),
+    ("update", "mettre à jour (* pour tout)"),
+    ("list", "paquets installés"),
+    ("search", "rechercher"),
+    ("info", "détails d'un paquet"),
+    ("bucket", "dépôts de paquets"),
+    ("status", "mises à jour disponibles"),
+    ("cleanup", "supprimer les anciennes versions"),
+];
+const CHOCO: Pairs = &[
+    ("install", "installer"),
+    ("uninstall", "désinstaller"),
+    ("upgrade", "mettre à jour"),
+    ("list", "paquets installés"),
+    ("search", "rechercher"),
+    ("info", "détails d'un paquet"),
+    ("outdated", "paquets obsolètes"),
+];
+const DOTNET: Pairs = &[
+    ("build", "compiler"),
+    ("run", "compiler et lancer"),
+    ("test", "lancer les tests"),
+    ("restore", "restaurer les dépendances"),
+    ("publish", "publier"),
+    ("clean", "nettoyer"),
+    ("add", "ajouter une référence / un paquet"),
+    ("new", "nouveau projet"),
+    ("watch", "relancer à chaque modification"),
+    ("tool", "outils globaux"),
+    ("sln", "fichier de solution"),
+    ("format", "formater le code"),
+];
+const DOTNET_OPTS: Pairs = &[
+    ("-c", "configuration (Debug / Release)"),
+    ("--configuration", "configuration (Debug / Release)"),
+    ("-f", "framework cible"),
+    ("--no-build", "sans recompiler"),
+    ("--no-restore", "sans restaurer"),
+    ("-v", "niveau de détail"),
+];
+/// Applets PowerShell courantes : utile dès les premières lettres.
+const PS_CMDLETS: Pairs = &[
+    ("Get-ChildItem", "lister un dossier (ls, dir)"),
+    ("Get-Content", "afficher un fichier (cat, type)"),
+    ("Get-Command", "où se trouve une commande"),
+    ("Get-Help", "aide d'une commande"),
+    ("Get-Process", "processus en cours"),
+    ("Get-Service", "services Windows"),
+    ("Set-Location", "changer de dossier (cd)"),
+    ("New-Item", "créer un fichier / dossier"),
+    ("Remove-Item", "supprimer (rm, del)"),
+    ("Copy-Item", "copier (cp, copy)"),
+    ("Move-Item", "déplacer (mv, move)"),
+    ("Rename-Item", "renommer"),
+    ("Select-String", "rechercher dans des fichiers (grep)"),
+    ("Select-Object", "choisir des propriétés"),
+    ("Where-Object", "filtrer"),
+    ("ForEach-Object", "traiter chaque élément"),
+    ("Sort-Object", "trier"),
+    ("Measure-Object", "compter / mesurer"),
+    ("Test-Path", "le chemin existe-t-il ?"),
+    ("Invoke-WebRequest", "télécharger (curl, wget)"),
+    ("Invoke-RestMethod", "appeler une API JSON"),
+    ("Start-Process", "lancer un programme"),
+    ("Stop-Process", "arrêter un processus"),
+    ("Get-NetTCPConnection", "connexions et ports"),
+    ("Set-ExecutionPolicy", "stratégie d'exécution des scripts"),
+    ("Out-File", "écrire dans un fichier"),
+    ("Write-Host", "afficher un message"),
+    ("Clear-Host", "effacer l'écran (cls)"),
+];
+
 fn spec(cmd: &str, sub: Option<&str>) -> Option<(Pairs, Pairs)> {
     Some(match (cmd, sub) {
         ("git", None) => (GIT, GIT_OPTS),
@@ -244,6 +330,13 @@ fn spec(cmd: &str, sub: Option<&str>) -> Option<(Pairs, Pairs)> {
         ("apt" | "apt-get", None) => (APT, &[("-y", "répondre oui")]),
         ("apt" | "apt-get", Some(_)) => (&[], &[("-y", "répondre oui"), ("--installed", "installés"), ("--upgradable", "à mettre à jour")]),
         ("kubectl", None) => (KUBECTL, &[("-n", "espace de noms"), ("-o", "format de sortie")]),
+        ("winget", None) => (WINGET, &[("-e", "correspondance exacte"), ("--id", "par identifiant"), ("--all", "tout")]),
+        ("winget", Some(_)) => (&[], &[("-e", "correspondance exacte"), ("--id", "par identifiant"), ("--silent", "sans interaction")]),
+        ("scoop", None) => (SCOOP, &[]),
+        ("choco", None) => (CHOCO, &[("-y", "répondre oui")]),
+        ("choco", Some(_)) => (&[], &[("-y", "répondre oui")]),
+        ("dotnet", None) => (DOTNET, DOTNET_OPTS),
+        ("dotnet", Some(_)) => (&[], DOTNET_OPTS),
         _ => return None,
     })
 }
@@ -255,6 +348,9 @@ pub fn describe(cmd: &str, sub: &str) -> Option<&'static str> {
     let (subs, opts) = spec(cmd, None)?;
     subs.iter().chain(opts.iter()).find(|(name, _)| *name == sub).map(|(_, d)| *d)
 }
+
+/// Nombre maximal d'entrées gardées en cache (sources × dossiers).
+const MAX_CACHE: usize = 64;
 
 /// Cache des sources dynamiques (évite de relancer git à chaque touche).
 #[derive(Default)]
@@ -271,6 +367,14 @@ impl Completer {
             }
         }
         let v = f(cwd);
+        // Plafond : une entrée par (source, dossier) visité, sinon le cache grossit
+        // indéfiniment au fil d'une longue session. Les entrées périmées partent d'abord.
+        if self.cache.len() >= MAX_CACHE {
+            self.cache.retain(|_, (t, _)| t.elapsed() < ttl);
+            if self.cache.len() >= MAX_CACHE {
+                self.cache.clear();
+            }
+        }
         self.cache.insert(key, (Instant::now(), v.clone()));
         v
     }
@@ -279,8 +383,13 @@ impl Completer {
     pub fn complete(&mut self, buffer: &str, cwd: Option<&Path>, max: usize) -> Vec<Completion> {
         let ends_space = buffer.ends_with(' ');
         let mut tokens: Vec<&str> = buffer.split_whitespace().collect();
-        if tokens.is_empty() || (tokens.len() == 1 && !ends_space) {
+        if tokens.is_empty() {
             return Vec::new();
+        }
+        if tokens.len() == 1 && !ends_space {
+            // Le premier mot est d'ordinaire laissé à l'historique — sauf une applet
+            // PowerShell (« Get-Ch… »), qu'on ne peut pas devenir d'un historique vide.
+            return cmdlet_completions(tokens[0], max);
         }
         let current = if ends_space { "" } else { tokens.pop().unwrap_or("") };
         let base = &buffer[..buffer.len() - current.len()];
@@ -289,7 +398,9 @@ impl Completer {
             tokens.remove(0);
         }
         let Some(&cmd) = tokens.first() else { return Vec::new() };
-        let cmd = cmd.rsplit('/').next().unwrap_or(cmd);
+        // Nom du programme, séparateur Unix ou Windows, sans « .exe ».
+        let cmd = cmd.rsplit(['/', '\\']).next().unwrap_or(cmd);
+        let cmd = cmd.strip_suffix(".exe").unwrap_or(cmd);
         let args: Vec<&str> = tokens[1..].iter().copied().filter(|t| !t.starts_with('-')).collect();
         let cwd = cwd.map(Path::to_path_buf).unwrap_or_else(|| PathBuf::from("."));
 
@@ -349,6 +460,24 @@ impl Completer {
             })
             .collect()
     }
+}
+
+/// Applets PowerShell qui prolongent le mot tapé (« get-ch » → « Get-ChildItem »).
+/// Uniquement sous Windows : ailleurs ces noms n'existent pas.
+fn cmdlet_completions(word: &str, max: usize) -> Vec<Completion> {
+    if !cfg!(windows) || word.len() < 2 || max == 0 {
+        return Vec::new();
+    }
+    let lower = word.to_ascii_lowercase();
+    PS_CMDLETS
+        .iter()
+        .filter(|(name, _)| {
+            let n = name.to_ascii_lowercase();
+            n.starts_with(&lower) && n != lower
+        })
+        .take(max)
+        .map(|(name, desc)| Completion { full: format!("{name} "), label: name.to_string(), desc: desc.to_string() })
+        .collect()
 }
 
 fn run_in(cwd: &Path, prog: &str, args: &[&str]) -> Option<String> {
@@ -466,6 +595,34 @@ mod tests {
         assert_eq!(r[0].full, "docker compose up ");
         let r = c.complete("python manage.py mig", None, 10);
         assert_eq!(r[0].full, "python manage.py migrate ");
+        // Chemin Windows : le programme est reconnu malgré les antislashs et « .exe ».
+        let r = c.complete("C:\\tools\\git\\cmd\\git.exe st", None, 10);
+        assert!(r.iter().any(|x| x.label == "status"), "{r:?}");
+        let r = c.complete("winget inst", None, 10);
+        assert_eq!(r[0].full, "winget install ");
+        let r = c.complete("dotnet bu", None, 10);
+        assert_eq!(r[0].full, "dotnet build ");
+    }
+
+    #[test]
+    fn cache_is_bounded() {
+        let mut c = Completer::default();
+        for i in 0..MAX_CACHE * 2 {
+            let dir = PathBuf::from(format!("/inexistant/{i}"));
+            let _ = c.complete("make ", Some(&dir), 5);
+        }
+        assert!(c.cache.len() <= MAX_CACHE, "cache non borné : {}", c.cache.len());
+    }
+
+    #[test]
+    fn powershell_cmdlets() {
+        let mut c = Completer::default();
+        let r = c.complete("get-ch", None, 5);
+        if cfg!(windows) {
+            assert_eq!(r[0].full, "Get-ChildItem ");
+        } else {
+            assert!(r.is_empty(), "les applets ne concernent que Windows");
+        }
     }
 
     #[test]

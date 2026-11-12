@@ -844,6 +844,9 @@ fn page_suggestions(ui: &mut egui::Ui, config: &mut Config, info: &SettingsInfo,
     card(ui, t("Sources"), |ui| {
         ui.checkbox(&mut config.history_zsh, t("Historique zsh (~/.zsh_history)"));
         ui.checkbox(&mut config.history_bash, t("Historique bash (~/.bash_history)"));
+        if cfg!(windows) {
+            ui.checkbox(&mut config.history_powershell, t("Historique PowerShell (PSReadLine)"));
+        }
         hint(ui, t("Les commandes lancées dans NovaTerm sont ajoutées automatiquement."));
         if info.history_loading {
             ui.label(t("Chargement de l'historique…"));

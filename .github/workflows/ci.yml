@@ -1,5 +1,7 @@
 # Vérification rapide à chaque push et pull request (aucun paquet, aucune release) :
-# tests + clippy sous Linux, compilation vérifiée pour Windows et macOS.
+# tests + clippy sous Linux, compilation vérifiée pour macOS, et **tests réels sous
+# Windows** : la compilation croisée depuis Linux cible windows-gnu alors que les
+# paquets publiés sont en MSVC, et aucun code `cfg(windows)` n'y était exécuté.
 name: CI
 
 on:
@@ -36,3 +38,16 @@ jobs:
         run: cargo check --target x86_64-pc-windows-gnu
       - name: Compile pour macOS
         run: cargo check --target x86_64-apple-darwin
+
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - uses: Swatinem/rust-cache@v2
+      - name: Tests (MSVC)
+        run: cargo test
+      - name: Clippy (aucun avertissement toléré)
+        run: cargo clippy --all-targets -- -D warnings

@@ -142,6 +142,20 @@ Shell par défaut : PowerShell 7 s'il est installé, sinon Windows PowerShell ;
 cmd, WSL et Git Bash se choisissent dans Paramètres → Terminal.
 Application non signée : à la première ouverture, « Informations complémentaires → Exécuter quand même ».
 
+Suggestions, blocs de commandes et dossier courant fonctionnent sous **PowerShell**
+(intégration automatique, votre prompt oh-my-posh ou starship est conservé). Sous
+**cmd**, vous avez les suggestions et le dossier courant, mais pas les blocs : cmd
+ne permet pas de connaître le code de retour d'une commande.
+
+`imgcat` a besoin de `novaterm-cli.exe`, installé à côté de `novaterm.exe` : laissez
+cochée l'option « Ajouter NovaTerm au PATH » de l'installateur (version portable :
+ajoutez le dossier au PATH vous-même).
+
+Raccourci du terminal rapide : Windows exige **Ctrl et/ou Alt** dans la combinaison
+(Ctrl+Alt+T par exemple ; F12 seule n'est pas acceptée). NovaTerm crée un raccourci
+« NovaTerm (terminal rapide) » dans le menu Démarrer — c'est l'explorateur Windows
+qui gère la touche, il peut falloir rouvrir la session la première fois.
+
 </details>
 
 <details>
@@ -400,7 +414,8 @@ src/
   appimage.rs     intégration de l'AppImage au menu
   keys.rs         actions et raccourcis
   fonts.rs        polices (validées) ; guard.rs : mode sans échec
-  platform.rs     Linux / Windows / macOS
+  platform.rs     Linux / Windows / macOS ; win.rs : appels Windows directs
+  bin/novaterm-cli.rs  compagnon console (imgcat, options CLI sous Windows)
   config.rs, theme.rs, settings.rs, icon.rs, layout.rs, input.rs
 packaging/        paquets, script de release, script des captures
 docs/images/      captures du README
@@ -443,7 +458,10 @@ Release est publiée sans toucher au tag (ou `gh workflow run release.yml -f tag
 
 ## 🗺 Feuille de route
 
-- [ ] Intégration PowerShell et fish (suggestions et blocs partout)
+- [x] Intégration PowerShell, cmd et OSC 133 (suggestions et blocs partout)
+- [ ] Intégration fish et nu aux petits oignons
+- [ ] Décodage des images hors du fil de l'interface (grandes images)
+- [ ] Notifications Windows avec icône NovaTerm (identifiant d'application enregistré)
 - [ ] Rendu GPU dédié et ligatures
 - [ ] Recherche dans la sortie d'un bloc, repli des longues sorties
 - [ ] Synchronisation des réglages et snippets entre machines

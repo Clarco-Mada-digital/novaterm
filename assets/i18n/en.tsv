@@ -148,6 +148,7 @@ Proposer	Suggest
 Sources	Sources
 Historique zsh (~/.zsh_history)	zsh history (~/.zsh_history)
 Historique bash (~/.bash_history)	bash history (~/.bash_history)
+Historique PowerShell (PSReadLine)	PowerShell history (PSReadLine)
 Les commandes lancées dans NovaTerm sont ajoutées automatiquement.	Commands run in NovaTerm are added automatically.
 Chargement de l'historique…	Loading history…
 Ne jamais suggérer les commandes commençant par (une par ligne) :	Never suggest commands starting with (one per line):

@@ -2,17 +2,25 @@
 
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::sync::OnceLock;
 
 /// Cherche un exécutable dans le PATH.
 pub fn which(name: &str) -> Option<PathBuf> {
     let path = std::env::var_os("PATH")?;
     let exts: Vec<String> = if cfg!(windows) {
-        std::env::var("PATHEXT")
+        let pathext: Vec<String> = std::env::var("PATHEXT")
             .unwrap_or_else(|_| ".EXE;.CMD;.BAT".into())
             .split(';')
             .map(|e| e.to_ascii_lowercase())
-            .chain(std::iter::once(String::new()))
-            .collect()
+            .collect();
+        // Un nom déjà suffixé (« pwsh.exe ») est cherché tel quel, sans doubler
+        // l'extension (« pwsh.exe.exe »).
+        let lower = name.to_ascii_lowercase();
+        if pathext.iter().any(|e| !e.is_empty() && lower.ends_with(e)) {
+            vec![String::new()]
+        } else {
+            pathext.into_iter().chain(std::iter::once(String::new())).collect()
+        }
     } else {
         vec![String::new()]
     };
@@ -47,22 +55,31 @@ pub fn default_shell() -> String {
 }
 
 /// Shells proposés dans les paramètres : (libellé, commande).
+/// Résultat mis en cache : la liste est demandée à chaque image tant que le menu
+/// déroulant des paramètres est ouvert.
 pub fn shell_presets() -> Vec<(String, String)> {
+    static CACHE: OnceLock<Vec<(String, String)>> = OnceLock::new();
+    CACHE.get_or_init(detect_shells).clone()
+}
+
+fn detect_shells() -> Vec<(String, String)> {
     let mut out = Vec::new();
     if cfg!(windows) {
-        for (label, cmd) in [
-            ("PowerShell 7", "pwsh.exe"),
-            ("Windows PowerShell", "powershell.exe"),
-            ("Invite de commandes (cmd)", "cmd.exe"),
-            ("WSL (Linux)", "wsl.exe"),
-        ] {
-            if which(cmd.trim_end_matches(".exe")).is_some() {
+        for (label, cmd) in
+            [("PowerShell 7", "pwsh.exe"), ("Windows PowerShell", "powershell.exe"), ("Invite de commandes (cmd)", "cmd.exe")]
+        {
+            if which(cmd).is_some() {
                 out.push((label.to_string(), cmd.to_string()));
             }
         }
+        // wsl.exe est présent dans System32 même sans distribution installée :
+        // proposer « WSL » mènerait à un onglet qui se ferme aussitôt.
+        if which("wsl.exe").is_some() && wsl_has_distro() {
+            out.push(("WSL (Linux)".into(), "wsl.exe".into()));
+        }
         for git_bash in ["C:\\Program Files\\Git\\bin\\bash.exe", "C:\\Program Files (x86)\\Git\\bin\\bash.exe"] {
             if Path::new(git_bash).exists() {
-                out.push(("Git Bash".into(), format!("{git_bash} --login -i")));
+                out.push(("Git Bash".into(), format!("\"{git_bash}\" --login -i")));
                 break;
             }
         }
@@ -76,9 +93,39 @@ pub fn shell_presets() -> Vec<(String, String)> {
     out
 }
 
+/// Au moins une distribution WSL est-elle installée ?
+fn wsl_has_distro() -> bool {
+    if !cfg!(windows) {
+        return false;
+    }
+    let Ok(out) = hidden_command("wsl.exe").args(["-l", "-q"]).output() else { return false };
+    // wsl.exe répond en UTF-16 : on cherche simplement un caractère imprimable.
+    out.stdout.iter().any(|b| b.is_ascii_alphanumeric())
+}
+
+/// Binaire console compagnon (`novaterm-cli.exe`), à côté de l'exécutable.
+///
+/// Sous Windows, NovaTerm est une application fenêtrée : elle n'a pas de sortie
+/// standard utilisable et le shell ne l'attend pas. `novaterm-cli.exe` sert donc
+/// à `imgcat` et aux options en ligne de commande.
+pub fn cli_exe(exe: &Path) -> Option<PathBuf> {
+    if !cfg!(windows) {
+        return None;
+    }
+    let p = exe.with_file_name("novaterm-cli.exe");
+    p.is_file().then_some(p)
+}
+
 /// Ouvre un lien, un fichier ou un dossier avec l'application par défaut.
 pub fn open(target: &str) {
+    #[cfg(windows)]
+    {
+        if crate::win::open(target) {
+            return;
+        }
+    }
     let result = if cfg!(windows) {
+        // Repli : « start » a besoin d'un titre vide avant la cible.
         hidden_command("cmd").args(["/C", "start", "", target]).spawn()
     } else if cfg!(target_os = "macos") {
         Command::new("open").arg(target).spawn()
@@ -97,7 +144,9 @@ pub fn spawn_command_line(line: &str) -> std::io::Result<()> {
         return Ok(());
     }
     let program = parts.remove(0);
-    Command::new(program).args(parts).spawn().map(|_| ())
+    // hidden_command : sans cela, un éditeur console (vim, nano…) lancé depuis
+    // NovaTerm ouvre une fenêtre noire sous Windows.
+    hidden_command(&program).args(parts).spawn().map(|_| ())
 }
 
 /// Découpe une ligne de commande en arguments (guillemets simples et doubles).
@@ -129,8 +178,18 @@ pub fn split_args(line: &str) -> Vec<String> {
     out
 }
 
-/// Notification du bureau.
+/// Notification du bureau. Sous Windows elle passe par PowerShell (~500 ms) :
+/// l'appel est fait dans un fil pour ne pas figer l'affichage.
 pub fn notify(title: &str, body: &str) {
+    if cfg!(windows) {
+        let (t, b) = (title.to_string(), body.to_string());
+        std::thread::spawn(move || notify_blocking(&t, &b));
+    } else {
+        notify_blocking(title, body);
+    }
+}
+
+fn notify_blocking(title: &str, body: &str) {
     let result = if cfg!(target_os = "linux") || cfg!(target_os = "freebsd") {
         Command::new("notify-send").args(["-a", "NovaTerm", "-i", "novaterm", title, body]).spawn().map(|_| ())
     } else if cfg!(target_os = "macos") {
@@ -141,16 +200,21 @@ pub fn notify(title: &str, body: &str) {
         );
         Command::new("osascript").args(["-e", &script]).spawn().map(|_| ())
     } else if cfg!(windows) {
+        // L'identifiant d'application doit être enregistré auprès de Windows, sinon
+        // la notification est ignorée **sans erreur**. « NovaTerm » ne l'est pas
+        // (application non installée en paquet MSIX) : on se replie sur celui de
+        // PowerShell, toujours présent — c'est la méthode employée par BurntToast.
         let ps = format!(
             "[Windows.UI.Notifications.ToastNotificationManager, Windows.UI.Notifications, ContentType = WindowsRuntime] > $null; \
              $t = [Windows.UI.Notifications.ToastNotificationManager]::GetTemplateContent(1); \
              $x = $t.GetElementsByTagName('text'); $x.Item(0).AppendChild($t.CreateTextNode('{}')) > $null; \
              $x.Item(1).AppendChild($t.CreateTextNode('{}')) > $null; \
-             [Windows.UI.Notifications.ToastNotificationManager]::CreateToastNotifier('NovaTerm').Show([Windows.UI.Notifications.ToastNotification]::new($t))",
+             $n = [Windows.UI.Notifications.ToastNotificationManager]::CreateToastNotifier('{{1AC14E77-02E7-4E5D-B744-2EB1AE5198B7}}\\WindowsPowerShell\\v1.0\\powershell.exe'); \
+             $n.Show([Windows.UI.Notifications.ToastNotification]::new($t))",
             title.replace('\'', "''"),
             body.replace('\'', "''")
         );
-        hidden_command("powershell").args(["-NoProfile", "-Command", &ps]).spawn().map(|_| ())
+        hidden_command("powershell").args(["-NoProfile", "-NonInteractive", "-Command", &ps]).spawn().map(|_| ())
     } else {
         Ok(())
     };
@@ -173,9 +237,9 @@ pub fn play_sound() {
         }
     } else if cfg!(target_os = "macos") {
         let _ = Command::new("afplay").arg("/System/Library/Sounds/Glass.aiff").spawn();
-    } else if cfg!(windows) {
-        let _ = hidden_command("powershell").args(["-NoProfile", "-Command", "[System.Media.SystemSounds]::Asterisk.Play()"]).spawn();
     }
+    #[cfg(windows)]
+    crate::win::beep();
 }
 
 /// Programme lancé en arrière-plan. Sous Windows, NovaTerm est une application

@@ -75,19 +75,40 @@ pub fn looks_like_svg(bytes: &[u8]) -> bool {
     t.starts_with("<svg") || (t.starts_with("<?xml") || t.starts_with("<!--") || t.starts_with("<!DOCTYPE")) && head.contains("<svg")
 }
 
-/// Polices du système pour le texte des SVG (chargées une seule fois).
-fn svg_options() -> &'static resvg::usvg::Options<'static> {
-    static OPTS: std::sync::OnceLock<resvg::usvg::Options<'static>> = std::sync::OnceLock::new();
-    OPTS.get_or_init(|| {
-        let mut o = resvg::usvg::Options::default();
-        o.fontdb_mut().load_system_fonts();
-        o
-    })
+/// Options de rendu SVG.
+///
+/// Parcourir les polices du système prend plusieurs centaines de millisecondes —
+/// sur le fil de l'interface, donc visible. Or la très grande majorité des SVG
+/// (icônes, logos, graphiques) ne contient aucun texte : on ne charge les polices
+/// que pour ceux qui en ont réellement besoin.
+fn svg_options(with_text: bool) -> &'static resvg::usvg::Options<'static> {
+    static PLAIN: std::sync::OnceLock<resvg::usvg::Options<'static>> = std::sync::OnceLock::new();
+    static WITH_FONTS: std::sync::OnceLock<resvg::usvg::Options<'static>> = std::sync::OnceLock::new();
+    if with_text {
+        WITH_FONTS.get_or_init(|| {
+            let mut o = resvg::usvg::Options::default();
+            o.fontdb_mut().load_system_fonts();
+            o
+        })
+    } else {
+        PLAIN.get_or_init(resvg::usvg::Options::default)
+    }
+}
+
+/// Le SVG contient-il du texte à mettre en forme ?
+fn svg_has_text(bytes: &[u8]) -> bool {
+    // Un SVGZ est compressé : on ne peut pas le savoir sans le décompresser,
+    // on suppose alors qu'il peut contenir du texte.
+    if bytes.starts_with(&[0x1f, 0x8b]) {
+        return true;
+    }
+    memchr::memmem::find(bytes, b"<text").is_some() || memchr::memmem::find(bytes, b"<tspan").is_some()
 }
 
 /// Rendu d'un SVG en image : taille d'origine ×2 pour la netteté (entre 256 et 2048 px).
 pub fn decode_svg(bytes: &[u8]) -> Result<Decoded, String> {
-    let tree = resvg::usvg::Tree::from_data(bytes, svg_options()).map_err(|e| format!("SVG illisible : {e}"))?;
+    let opts = svg_options(svg_has_text(bytes));
+    let tree = resvg::usvg::Tree::from_data(bytes, opts).map_err(|e| format!("SVG illisible : {e}"))?;
     let size = tree.size();
     let (w, h) = (size.width().max(1.0), size.height().max(1.0));
     let longest = w.max(h);

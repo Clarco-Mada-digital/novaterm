@@ -103,6 +103,8 @@ pub struct Pane {
     child: Box<dyn Child + Send + Sync>,
     master: Box<dyn MasterPty + Send>,
     rx: Receiver<Msg>,
+    /// Tampons de lecture renvoyés au fil du PTY pour être réutilisés.
+    recycle: Sender<Vec<u8>>,
     ctx: egui::Context,
     pub title: String,
     pub exited: bool,
@@ -135,6 +137,13 @@ pub struct Pane {
     pub cmdline: Option<(usize, String)>,
     /// L'intégration shell a répondu au moins une fois.
     pub integration: bool,
+    /// Le shell transmet lui-même la ligne en cours (message `L` : zsh).
+    /// Sinon (PowerShell, cmd, OSC 133…) elle est relue dans la grille.
+    reports_line: bool,
+    /// Notre protocole (OSC 6973) est actif : l'OSC 133 devient redondant.
+    nova_protocol: bool,
+    /// Fin du prompt (ligne absolue, colonne) : début de la zone de saisie.
+    prompt_end: Option<(i64, usize)>,
     /// Touches pour vider la ligne avant d'insérer une commande (selon le shell).
     pub line_clear: &'static [u8],
     /// Un autre plugin de suggestions est actif dans ce shell.
@@ -177,10 +186,11 @@ impl Pane {
         let custom = config.shell.trim();
         let mut words = platform::split_args(custom);
         let shell_path = if words.is_empty() { platform::default_shell() } else { words.remove(0) };
-        let launch = if config.shell_integration { shell::launch_for(&shell_path) } else { shell::Launch::default() };
-        let mut cmd = if !launch.args.is_empty() {
+        let launch = shell::launch_for(&shell_path, config.shell_integration);
+        let mut cmd = if launch.has_args() {
+            // Arguments de l'intégration *autour* de ceux de l'utilisateur.
             let mut c = CommandBuilder::new(&shell_path);
-            c.args(&launch.args);
+            c.args(launch.args_around(&words));
             c
         } else if !custom.is_empty() {
             let mut c = CommandBuilder::new(&shell_path);
@@ -217,9 +227,13 @@ impl Pane {
         let term = Term::new(term_config(config), &dims, proxy);
 
         let thread_ctx = ctx.clone();
+        // Tampons recyclés : sous un gros débit (« cat » d'un fichier volumineux),
+        // le fil de lecture allouait un bloc de 64 Ko par lecture, soit des milliers
+        // d'allocations par seconde. L'interface les renvoie ici après usage.
+        let (recycle_tx, recycle_rx) = mpsc::channel::<Vec<u8>>();
         thread::spawn(move || {
             let mut reader = reader;
-            let mut buf = vec![0u8; 64 * 1024];
+            let mut buf: Vec<u8> = vec![0u8; 64 * 1024];
             loop {
                 match reader.read(&mut buf) {
                     Ok(0) | Err(_) => {
@@ -228,7 +242,11 @@ impl Pane {
                         break;
                     }
                     Ok(n) => {
-                        if tx.send(Msg::Bytes(buf[..n].to_vec())).is_err() {
+                        // Un tampon rendu par l'interface, sinon un neuf.
+                        let mut out = recycle_rx.try_recv().unwrap_or_default();
+                        out.clear();
+                        out.extend_from_slice(&buf[..n]);
+                        if tx.send(Msg::Bytes(out)).is_err() {
                             break;
                         }
                         thread_ctx.request_repaint();
@@ -244,6 +262,7 @@ impl Pane {
             child,
             master: pair.master,
             rx,
+            recycle: recycle_tx,
             ctx,
             title: "shell".to_string(),
             exited: false,
@@ -268,6 +287,9 @@ impl Pane {
             filter: SeqFilter::default(),
             cmdline: None,
             integration: false,
+            reports_line: false,
+            nova_protocol: false,
+            prompt_end: None,
             line_clear: shell::line_clear_keys(&shell_path),
             suggest_conflict: false,
             executed: Vec::new(),
@@ -314,6 +336,8 @@ impl Pane {
                             Chunk::Seq(kind, body) => self.handle_seq(kind, &body),
                         }
                     }
+                    // Le tampon repart au fil de lecture au lieu d'être libéré.
+                    let _ = self.recycle.send(bytes);
                     self.last_output = Instant::now();
                     self.dirty = true;
                 }
@@ -326,6 +350,9 @@ impl Pane {
         }
         if budget == 0 {
             self.ctx.request_repaint();
+        }
+        if changed {
+            self.refresh_cmdline_from_grid();
         }
         changed
     }
@@ -340,6 +367,10 @@ impl Pane {
                 if let Some(p) = shell::parse_osc7(&String::from_utf8_lossy(body)) {
                     self.cwd_reported = Some(PathBuf::from(p));
                 }
+            }
+            SeqKind::Osc133 => {
+                let s = String::from_utf8_lossy(body).into_owned();
+                self.handle_osc133(&s);
             }
             SeqKind::Notify777 => {
                 if self.opts.app_notify {
@@ -419,39 +450,103 @@ impl Pane {
         }
     }
 
+    /// Texte de la ligne en cours de saisie, relu dans la grille entre la fin du
+    /// prompt et le curseur (`to_cursor`) ou la fin du contenu de la ligne.
+    ///
+    /// Sert aux shells qui ne transmettent pas la ligne eux-mêmes : PowerShell, cmd,
+    /// et tout shell en OSC 133 (fish, nu, starship, oh-my-posh…).
+    fn line_at_prompt(&self, to_cursor: bool) -> Option<(usize, String)> {
+        use alacritty_terminal::term::cell::Flags;
+        let (prompt_abs, prompt_col) = self.prompt_end?;
+        if self.term.mode().contains(alacritty_terminal::term::TermMode::ALT_SCREEN) {
+            return None;
+        }
+        let cols = self.term.columns();
+        let grid = self.term.grid();
+        // Seule la saisie au prompt courant nous intéresse (pas l'historique défilé).
+        let start = Line((prompt_abs - grid.history_size() as i64) as i32);
+        let cur = grid.cursor.point;
+        if start < grid.topmost_line() || start > cur.line || cur.line > grid.bottommost_line() || prompt_col > cols {
+            return None;
+        }
+        // Une commande très longue occupe plusieurs lignes repliées : au-delà, c'est
+        // forcément de la sortie de programme et non une saisie.
+        if (cur.line - start).0 > 20 {
+            return None;
+        }
+        let mut rows = Vec::new();
+        let mut line = start;
+        while line <= cur.line {
+            let chars: Vec<char> = (0..cols).map(|c| grid[line][Column(c)].c).collect();
+            let wrapped = grid[line][Column(cols.saturating_sub(1))].flags.contains(Flags::WRAPLINE);
+            rows.push((chars, wrapped));
+            line += 1;
+        }
+        rebuild_line(&rows, prompt_col, cur.column.0.min(cols), to_cursor)
+    }
+
+    /// Met à jour la ligne en cours pour les shells qui ne la transmettent pas.
+    fn refresh_cmdline_from_grid(&mut self) {
+        if self.reports_line || self.prompt_end.is_none() {
+            return;
+        }
+        self.cmdline = self.line_at_prompt(true);
+    }
+
     fn handle_shell_msg(&mut self, payload: &str) {
+        if let Some(msg) = shell::parse(payload) {
+            self.nova_protocol = true;
+            self.apply_shell_msg(msg);
+        }
+    }
+
+    /// Intégration shell standard (OSC 133), pour les shells que NovaTerm ne configure
+    /// pas lui-même (fish, nu) et les prompts qui l'émettent déjà (starship, oh-my-posh).
+    ///
+    /// Notre protocole est plus riche (texte de la commande, ligne en cours) : quand il
+    /// est actif, l'OSC 133 est ignoré, sinon chaque commande créerait deux blocs.
+    fn handle_osc133(&mut self, payload: &str) {
+        if self.nova_protocol {
+            return;
+        }
+        if let Some(msg) = shell::parse_osc133(payload) {
+            self.apply_shell_msg(msg);
+        }
+    }
+
+    fn apply_shell_msg(&mut self, msg: ShellMsg) {
         self.integration = true;
-        match shell::parse(payload) {
-            Some(ShellMsg::Line { cursor, buffer }) => self.cmdline = Some((cursor, buffer)),
-            Some(ShellMsg::EndLine) => self.cmdline = None,
-            Some(ShellMsg::PromptStart) => {
+        match msg {
+            ShellMsg::Line { cursor, buffer } => {
+                self.reports_line = true;
+                self.cmdline = Some((cursor, buffer));
+            }
+            ShellMsg::EndLine => self.cmdline = None,
+            ShellMsg::PromptStart => {
                 self.cmdline = None;
+                self.prompt_end = None;
                 let line = self.term.grid().cursor.point.line;
                 self.prompt_abs = Some(self.abs_line(line));
             }
-            Some(ShellMsg::Executed(cmd)) => {
-                self.cmdline = None;
-                // La commande a été validée : le curseur est en début de ligne suivante.
+            ShellMsg::PromptEnd => {
                 let cur = self.term.grid().cursor.point;
-                let line = if cur.column.0 == 0 { cur.line - 1 } else { cur.line };
-                let id = self.next_mark;
-                self.next_mark += 1;
-                let prompt_rows = self
-                    .prompt_abs
-                    .map(|a| (self.abs_line(line) - a + 1).clamp(1, 20) as usize)
-                    .unwrap_or(1);
-                self.mark(line, 0, MarkKind::Block, id);
-                self.blocks.push(Block { id, command: cmd.clone(), started: Instant::now(), finished: None, prompt_rows });
-                if self.blocks.len() > 5000 {
-                    self.blocks.drain(..1000);
-                }
-                self.running = Some(id);
-                self.prompt_abs = None;
-                if self.executed.len() < 256 {
-                    self.executed.push(cmd);
+                self.prompt_end = Some((self.abs_line(cur.line), cur.column.0));
+                if self.prompt_abs.is_none() {
+                    self.prompt_abs = Some(self.abs_line(cur.line));
                 }
             }
-            Some(ShellMsg::Done(code)) => {
+            ShellMsg::ExecutedUnknown => {
+                // OSC 133;C : le shell ne transmet pas le texte, on le relit dans la grille.
+                let cmd = self.line_at_prompt(false).map(|(_, t)| t).unwrap_or_default();
+                if cmd.trim().is_empty() {
+                    self.cmdline = None;
+                    self.prompt_end = None;
+                    return;
+                }
+                self.apply_shell_msg(ShellMsg::Executed(cmd));
+            }
+            ShellMsg::Executed(cmd) => self.start_block(cmd),
+            ShellMsg::Done(code) => {
                 if let Some(id) = self.running.take() {
                     if let Some(b) = self.blocks.iter_mut().rev().find(|b| b.id == id) {
                         let d = b.started.elapsed();
@@ -460,9 +555,34 @@ impl Pane {
                     }
                 }
             }
-            Some(ShellMsg::Cwd(p)) => self.cwd_reported = Some(PathBuf::from(p)),
-            Some(ShellMsg::Conflict) => self.suggest_conflict = true,
-            None => {}
+            ShellMsg::Cwd(p) => self.cwd_reported = Some(PathBuf::from(p)),
+            ShellMsg::Conflict => self.suggest_conflict = true,
+        }
+    }
+
+    /// Ouvre un bloc de commande à la position courante.
+    fn start_block(&mut self, cmd: String) {
+        self.cmdline = None;
+        self.prompt_end = None;
+        // La commande a été validée : le curseur est en début de ligne suivante
+        // (zsh, bash) ou encore sur la ligne du prompt (PowerShell, OSC 133).
+        let cur = self.term.grid().cursor.point;
+        let line = if cur.column.0 == 0 { cur.line - 1 } else { cur.line };
+        let id = self.next_mark;
+        self.next_mark += 1;
+        let prompt_rows = self
+            .prompt_abs
+            .map(|a| (self.abs_line(line) - a + 1).clamp(1, 20) as usize)
+            .unwrap_or(1);
+        self.mark(line, 0, MarkKind::Block, id);
+        self.blocks.push(Block { id, command: cmd.clone(), started: Instant::now(), finished: None, prompt_rows });
+        if self.blocks.len() > 5000 {
+            self.blocks.drain(..1000);
+        }
+        self.running = Some(id);
+        self.prompt_abs = None;
+        if self.executed.len() < 256 {
+            self.executed.push(cmd);
         }
     }
 
@@ -825,6 +945,44 @@ impl Pane {
     }
 }
 
+/// Reconstruit la ligne saisie à partir des lignes de la grille.
+///
+/// `rows` va de la ligne de fin de prompt à celle du curseur ; chaque entrée est
+/// (caractères de la ligne entière, la ligne se poursuit-elle sur la suivante ?).
+/// `prompt_col` est la colonne où commence la saisie, `cursor_col` celle du curseur.
+///
+/// Retourne (position du curseur en caractères, texte), ou `None` si la zone ne
+/// ressemble pas à une saisie en cours — mieux vaut ne rien suggérer que de
+/// proposer la complétion d'une ligne tronquée.
+fn rebuild_line(rows: &[(Vec<char>, bool)], prompt_col: usize, cursor_col: usize, to_cursor: bool) -> Option<(usize, String)> {
+    if rows.is_empty() {
+        return None;
+    }
+    let mut text = String::new();
+    for (i, (chars, wrapped)) in rows.iter().enumerate() {
+        let last = i + 1 == rows.len();
+        let from = if i == 0 { prompt_col } else { 0 };
+        if from > chars.len() {
+            return None;
+        }
+        let to = if last && to_cursor { cursor_col.max(from) } else { chars.len() };
+        text.extend(&chars[from..to.min(chars.len())]);
+        if last {
+            // Du texte après le curseur : l'utilisateur édite au milieu de la ligne.
+            if to_cursor && chars[to.min(chars.len())..].iter().any(|c| *c != ' ') {
+                return None;
+            }
+        } else if !wrapped {
+            // Ligne non repliée avant le curseur : c'est de la sortie, pas une saisie.
+            return None;
+        }
+    }
+    if !to_cursor {
+        text = text.trim_end().to_string();
+    }
+    Some((text.chars().count(), text))
+}
+
 fn term_config(config: &Config) -> TermConfig {
     let mut separators = config.word_separators.replace("\\t", "\t");
     if separators.is_empty() {
@@ -841,5 +999,56 @@ fn term_config(config: &Config) -> TermConfig {
 impl Drop for Pane {
     fn drop(&mut self) {
         let _ = self.child.kill();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Construit les lignes d'une grille de `cols` colonnes (complétées d'espaces).
+    fn rows(lines: &[(&str, bool)], cols: usize) -> Vec<(Vec<char>, bool)> {
+        lines
+            .iter()
+            .map(|(text, wrapped)| {
+                let mut v: Vec<char> = text.chars().collect();
+                v.resize(cols, ' ');
+                (v, *wrapped)
+            })
+            .collect()
+    }
+
+    #[test]
+    fn line_rebuilt_from_grid() {
+        // « PS C:\> git st » : la saisie commence colonne 8, curseur en colonne 14.
+        let g = rows(&[("PS C:\\> git st", false)], 40);
+        assert_eq!(rebuild_line(&g, 8, 14, true), Some((6, "git st".to_string())));
+        // Espace final conservé : indispensable pour compléter « git  » → sous-commandes.
+        assert_eq!(rebuild_line(&g, 8, 15, true), Some((7, "git st ".to_string())));
+    }
+
+    #[test]
+    fn cursor_inside_the_line_suggests_nothing() {
+        // Curseur revenu au milieu de « git status » : une suggestion tronquerait la ligne.
+        let g = rows(&[("PS C:\\> git status", false)], 40);
+        assert_eq!(rebuild_line(&g, 8, 11, true), None);
+        // En revanche, pour la commande exécutée on veut la ligne entière.
+        assert_eq!(rebuild_line(&g, 8, 11, false), Some((10, "git status".to_string())));
+    }
+
+    #[test]
+    fn wrapped_command_spans_rows() {
+        // Écran de 12 colonnes : « > cargo build --release » se replie sur 2 lignes.
+        // La première est pleine et marquée « repliée », le curseur est sur la seconde.
+        let g = rows(&[("> cargo buil", true), ("d --release", false)], 12);
+        assert_eq!(rebuild_line(&g, 2, 11, true), Some((21, "cargo build --release".to_string())));
+    }
+
+    #[test]
+    fn program_output_is_not_a_command_line() {
+        // Ligne non repliée suivie d'une autre : c'est de la sortie, pas une saisie.
+        let g = rows(&[("> ls", false), ("fichier.txt", false)], 40);
+        assert_eq!(rebuild_line(&g, 2, 11, true), None);
+        assert_eq!(rebuild_line(&[], 0, 0, true), None);
     }
 }

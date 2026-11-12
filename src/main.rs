@@ -30,6 +30,8 @@ mod stream;
 mod terminal;
 mod theme;
 mod update;
+#[cfg(windows)]
+mod win;
 
 use app::{NovaApp, StartOptions};
 
@@ -62,6 +64,10 @@ fn arg_value(args: &[String], name: &str) -> Option<String> {
 }
 
 fn main() -> eframe::Result<()> {
+    // Console masquée : les programmes console lancés ensuite s'y rattachent au
+    // lieu d'ouvrir une fenêtre noire (shells des onglets, git, éditeur…).
+    #[cfg(windows)]
+    win::hide_console();
     appimage::take_runtime_env();
     let args: Vec<String> = std::env::args().collect();
     let has = |n: &str| args.iter().any(|a| a == n);

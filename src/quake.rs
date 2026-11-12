@@ -56,7 +56,7 @@ pub fn toggle_or_launch() {
         }
     }
     if let Some(exe) = crate::appimage::stable_exe() {
-        if let Err(e) = Command::new(exe).arg("--quake").spawn() {
+        if let Err(e) = crate::platform::hidden_command(&exe.display().to_string()).arg("--quake").spawn() {
             eprintln!("NovaTerm: lancement du terminal rapide impossible: {e}");
         }
     }
@@ -93,6 +93,7 @@ pub fn cleanup() {
 }
 
 /// « Ctrl+Alt+T » / « F12 » → format GTK « <Primary><Alt>t ».
+#[cfg(any(not(windows), test))]
 pub fn to_gtk_accel(s: &str) -> String {
     let mut out = String::new();
     let parts: Vec<&str> = s.split('+').map(str::trim).filter(|p| !p.is_empty()).collect();
@@ -186,6 +187,7 @@ fn toggle_command(exe: &std::path::Path) -> String {
 }
 
 /// Programme lancé par une commande gsettings (« '"/chemin/x" --toggle' » → /chemin/x).
+#[cfg(any(not(windows), test))]
 fn program_of(command: &str) -> Option<std::path::PathBuf> {
     let c = command.trim().trim_matches('\'');
     let prog = if let Some(rest) = c.strip_prefix('"') {
@@ -194,6 +196,126 @@ fn program_of(command: &str) -> Option<std::path::PathBuf> {
         c.split_whitespace().next()?
     };
     (!prog.is_empty()).then(|| std::path::PathBuf::from(prog))
+}
+
+// ---------------------------------------------------------------- Windows
+//
+// Windows n'a pas de table de raccourcis personnalisés comme GNOME ou Cinnamon.
+// En revanche, un **raccourci (.lnk) placé dans le menu Démarrer** peut porter une
+// touche d'accès rapide gérée par l'explorateur : c'est la seule méthode qui
+// fonctionne sans laisser un programme résident. Contrainte de Windows : la
+// combinaison doit comporter Ctrl et/ou Alt (une touche F seule est ignorée).
+
+/// Raccourci du menu Démarrer qui lance `novaterm --toggle`.
+#[cfg(windows)]
+fn win_lnk_path() -> Option<PathBuf> {
+    let dir = dirs::data_dir()?.join("Microsoft").join("Windows").join("Start Menu").join("Programs");
+    std::fs::create_dir_all(&dir).ok()?;
+    Some(dir.join("NovaTerm (terminal rapide).lnk"))
+}
+
+/// Mémo de la touche installée (pour l'afficher sans relire le .lnk).
+#[cfg(windows)]
+fn win_keys_path() -> Option<PathBuf> {
+    let dir = dirs::cache_dir()?.join("novaterm");
+    std::fs::create_dir_all(&dir).ok()?;
+    Some(dir.join("quake.hotkey"))
+}
+
+/// « Ctrl+Alt+T » → « CTRL+ALT+T » (format attendu par WScript.Shell).
+#[cfg(any(windows, test))]
+fn to_win_hotkey(s: &str) -> Result<String, String> {
+    let parts: Vec<&str> = s.split('+').map(str::trim).filter(|p| !p.is_empty()).collect();
+    let (Some(key), mods) = (parts.last(), &parts[..parts.len().saturating_sub(1)]) else {
+        return Err("Combinaison vide".into());
+    };
+    let mut out = String::new();
+    for m in mods {
+        out.push_str(match m.to_ascii_lowercase().as_str() {
+            "ctrl" | "control" => "CTRL+",
+            "alt" => "ALT+",
+            "shift" | "maj" => "SHIFT+",
+            // Windows ne sait pas associer la touche Windows à un raccourci .lnk.
+            "super" | "win" | "meta" => {
+                return Err("Windows réserve la touche Windows : utilisez Ctrl+Alt+une touche.".into())
+            }
+            _ => return Err(format!("Modificateur inconnu : {m}")),
+        });
+    }
+    if !out.contains("CTRL") && !out.contains("ALT") {
+        return Err("Windows exige Ctrl et/ou Alt dans un raccourci global (ex. Ctrl+Alt+T).".into());
+    }
+    let key = key.to_ascii_uppercase();
+    let named = match key.as_str() {
+        "SPACE" | "ESPACE" => "SPACE".to_string(),
+        "ENTER" | "ENTRÉE" | "RETURN" => "ENTER".to_string(),
+        "PAGEUP" => "PGUP".to_string(),
+        "PAGEDOWN" => "PGDN".to_string(),
+        k => k.to_string(),
+    };
+    Ok(out + &named)
+}
+
+/// Crée ou remplace le raccourci .lnk via WScript.Shell (aucune fenêtre ouverte).
+#[cfg(windows)]
+fn win_write_lnk(hotkey: &str, exe: &std::path::Path) -> Result<(), String> {
+    let lnk = win_lnk_path().ok_or("dossier du menu Démarrer introuvable")?;
+    let q = |s: String| s.replace('\'', "''");
+    let script = format!(
+        "$ErrorActionPreference='Stop'; \
+         $s=(New-Object -ComObject WScript.Shell).CreateShortcut('{lnk}'); \
+         $s.TargetPath='{exe}'; $s.Arguments='--toggle'; $s.Hotkey='{hotkey}'; \
+         $s.IconLocation='{exe},0'; $s.Description='NovaTerm (terminal rapide)'; $s.Save()",
+        lnk = q(lnk.display().to_string()),
+        exe = q(exe.display().to_string()),
+        hotkey = q(hotkey.to_string()),
+    );
+    let out = crate::platform::hidden_command("powershell")
+        .args(["-NoProfile", "-NonInteractive", "-Command", &script])
+        .output()
+        .map_err(|e| format!("PowerShell introuvable : {e}"))?;
+    if !out.status.success() {
+        let err = String::from_utf8_lossy(&out.stderr);
+        return Err(format!("création du raccourci impossible : {}", err.lines().next().unwrap_or("erreur inconnue")));
+    }
+    if let Some(p) = win_keys_path() {
+        let _ = std::fs::write(p, hotkey);
+    }
+    Ok(())
+}
+
+#[cfg(windows)]
+fn win_install(combo: &str) -> Result<String, String> {
+    let exe = crate::appimage::stable_exe().ok_or("exécutable introuvable")?;
+    let hotkey = to_win_hotkey(combo)?;
+    win_write_lnk(&hotkey, &exe)?;
+    Ok(format!(
+        "✔ {hotkey} active (raccourci « NovaTerm (terminal rapide) » dans le menu Démarrer). \
+         Si rien ne se passe, ouvrez une session puis réessayez : l'explorateur relit les raccourcis au démarrage."
+    ))
+}
+
+#[cfg(windows)]
+fn win_status() -> Option<ShortcutStatus> {
+    let lnk = win_lnk_path()?;
+    if !lnk.is_file() {
+        return None;
+    }
+    let keys = win_keys_path().and_then(|p| std::fs::read_to_string(p).ok()).unwrap_or_else(|| "?".into());
+    let program = crate::appimage::stable_exe();
+    let program_ok = program.as_ref().is_some_and(|p| p.exists());
+    Some(ShortcutStatus { keys, program, program_ok, legacy: false })
+}
+
+#[cfg(windows)]
+fn win_remove() -> Result<String, String> {
+    if let Some(p) = win_lnk_path() {
+        let _ = std::fs::remove_file(p);
+    }
+    if let Some(p) = win_keys_path() {
+        let _ = std::fs::remove_file(p);
+    }
+    Ok("Raccourci du terminal rapide supprimé.".into())
 }
 
 /// Bureau dont on sait gérer les raccourcis personnalisés.
@@ -314,6 +436,14 @@ pub struct ShortcutStatus {
 }
 
 pub fn shortcut_status() -> Option<ShortcutStatus> {
+    #[cfg(windows)]
+    return win_status();
+    #[cfg(not(windows))]
+    status_desk()
+}
+
+#[cfg(not(windows))]
+fn status_desk() -> Option<ShortcutStatus> {
     let d = desk()?;
     let list = d.read_list();
     let legacy = list.contains(&d.item(LEGACY_ID));
@@ -332,6 +462,7 @@ pub fn shortcut_status() -> Option<ShortcutStatus> {
 }
 
 /// Autres raccourcis du bureau qui utilisent déjà cette combinaison.
+#[cfg(not(windows))]
 pub fn conflicts(accel: &str) -> Vec<String> {
     let Some(d) = desk() else { return Vec::new() };
     let needle = format!("'{}'", accel.to_ascii_lowercase());
@@ -402,6 +533,14 @@ pub fn repair_shortcut(exe: Option<&std::path::Path>) -> Option<String> {
 
 /// Supprime le raccourci global (et l'ancien identifiant).
 pub fn remove_shortcut() -> Result<String, String> {
+    #[cfg(windows)]
+    return win_remove();
+    #[cfg(not(windows))]
+    remove_shortcut_desk()
+}
+
+#[cfg(not(windows))]
+fn remove_shortcut_desk() -> Result<String, String> {
     let d = desk().ok_or("bureau non pris en charge")?;
     let items: Vec<String> = d.read_list().into_iter().filter(|i| *i != d.item(ID) && *i != d.item(LEGACY_ID)).collect();
     d.write_list_reload(&items, None)?;
@@ -413,6 +552,14 @@ pub fn remove_shortcut() -> Result<String, String> {
 /// Crée (ou remplace) le raccourci global qui lance `novaterm --toggle`.
 /// L'ancienne touche est retirée : il n'y a jamais deux raccourcis.
 pub fn install_shortcut(combo: &str) -> Result<String, String> {
+    #[cfg(windows)]
+    return win_install(combo);
+    #[cfg(not(windows))]
+    install_shortcut_desk(combo)
+}
+
+#[cfg(not(windows))]
+fn install_shortcut_desk(combo: &str) -> Result<String, String> {
     let exe = crate::appimage::stable_exe().ok_or("exécutable introuvable")?;
     let Some(d) = desk() else {
         return Err(format!(
@@ -460,6 +607,12 @@ mod tests {
     fn accel_and_list() {
         assert_eq!(to_gtk_accel("F12"), "F12");
         assert_eq!(to_gtk_accel("Ctrl+Alt+T"), "<Primary><Alt>t");
+        // Windows : Ctrl et/ou Alt obligatoires, touche Windows refusée.
+        assert_eq!(to_win_hotkey("Ctrl+Alt+T").unwrap(), "CTRL+ALT+T");
+        assert_eq!(to_win_hotkey("Ctrl+Shift+F12").unwrap(), "CTRL+SHIFT+F12");
+        assert!(to_win_hotkey("F12").is_err());
+        assert!(to_win_hotkey("Super+T").is_err());
+        assert!(to_win_hotkey("").is_err());
         assert_eq!(add_to_list("@as []", "a"), "['a']");
         assert_eq!(add_to_list("['custom0', 'a']", "a"), "['custom0', 'a']");
         assert_eq!(add_to_list("['custom0']", "b"), "['custom0', 'b']");

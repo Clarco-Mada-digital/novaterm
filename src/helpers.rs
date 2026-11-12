@@ -56,7 +56,15 @@ fn path_commands() -> &'static HashSet<String> {
                 let Ok(rd) = std::fs::read_dir(dir) else { continue };
                 for e in rd.flatten() {
                     if let Some(name) = e.file_name().to_str() {
-                        let name = name.strip_suffix(".exe").unwrap_or(name);
+                        // Sous Windows, le nom tapé est sans extension : « git.exe »
+                        // comme « gh.cmd » ou « deactivate.bat » donnent « git », « gh »…
+                        let name = if cfg!(windows) {
+                            let lower = name.to_ascii_lowercase();
+                            let cut = [".exe", ".cmd", ".bat", ".com", ".ps1"].iter().find(|e| lower.ends_with(*e)).map(|e| name.len() - e.len());
+                            &name[..cut.unwrap_or(name.len())]
+                        } else {
+                            name.strip_suffix(".exe").unwrap_or(name)
+                        };
                         if !name.starts_with('.') {
                             set.insert(name.to_string());
                         }
@@ -67,12 +75,42 @@ fn path_commands() -> &'static HashSet<String> {
         for b in ["cd", "export", "source", "alias", "echo", "exit", "history", "type", "unset", "jobs", "fg", "bg"] {
             set.insert(b.to_string());
         }
+        if cfg!(windows) {
+            // Commandes internes de cmd et applets / alias PowerShell : elles ne sont
+            // pas des fichiers du PATH, mais « gti status » doit quand même proposer
+            // « git », et « Get-ChildItm » proposer « Get-ChildItem ».
+            for b in [
+                "cls", "dir", "copy", "move", "del", "ren", "md", "rd", "type", "set", "where", "tasklist", "taskkill", "ipconfig", "systeminfo",
+                "Get-ChildItem", "Get-Content", "Get-Command", "Get-Help", "Get-Process", "Get-Service", "Get-Location", "Set-Location",
+                "Set-Item", "New-Item", "Remove-Item", "Copy-Item", "Move-Item", "Rename-Item", "Select-String", "Select-Object",
+                "Where-Object", "ForEach-Object", "Measure-Object", "Sort-Object", "Out-File", "Write-Host", "Invoke-WebRequest",
+                "Invoke-RestMethod", "Start-Process", "Stop-Process", "Test-Path", "Resolve-Path", "Get-Date", "Clear-Host",
+                "ls", "cat", "cp", "mv", "rm", "pwd", "man", "gci", "gc", "gcm", "sls", "iwr", "irm", "curl", "wget",
+            ] {
+                set.insert(b.to_string());
+            }
+        }
         set
     })
 }
 
 /// Préfixes à ignorer pour trouver le vrai programme d'une ligne.
 const WRAPPERS: [&str; 6] = ["sudo", "time", "nohup", "exec", "env", "doas"];
+
+/// La sortie dit-elle « commande inconnue » ? PowerShell n'emploie pas le message
+/// d'un shell POSIX et renvoie 1, non 127 : sans ces motifs, la correction des
+/// fautes de frappe ne se déclenchait jamais sous Windows.
+fn command_not_found(output_lower: &str, exit: i32) -> bool {
+    exit == 127
+        || output_lower.contains("command not found")
+        || output_lower.contains("commande introuvable")
+        // PowerShell (anglais / français) et cmd.
+        || output_lower.contains("is not recognized as the name of a cmdlet")
+        || output_lower.contains("n'est pas reconnu comme nom d'applet de commande")
+        || output_lower.contains("commandnotfoundexception")
+        || output_lower.contains("is not recognized as an internal or external command")
+        || output_lower.contains("n'est pas reconnu en tant que commande interne")
+}
 
 /// Programme d'une ligne de commande et sa position (en octets) dans la ligne.
 fn program_of(line: &str) -> Option<(usize, &str)> {
@@ -92,7 +130,8 @@ fn program_of(line: &str) -> Option<(usize, &str)> {
 /// l'historique (pour départager). Retourne la ligne corrigée.
 pub fn suggest_typo(line: &str, used: &dyn Fn(&str) -> u32) -> Option<String> {
     let (pos, prog) = program_of(line)?;
-    if prog.contains('/') || prog.len() < 2 {
+    // Un chemin (quel que soit le séparateur) n'est pas une faute de frappe.
+    if prog.contains('/') || prog.contains('\\') || prog.len() < 2 {
         return None;
     }
     let cmds = path_commands();
@@ -164,7 +203,7 @@ pub fn tips_for(command: &str, output: &str, exit: i32, used: &dyn Fn(&str) -> u
     let cmd = command.trim();
     let has_sudo = cmd.starts_with("sudo ");
 
-    if exit == 127 || low.contains("command not found") || low.contains("commande introuvable") {
+    if command_not_found(&low, exit) {
         if let Some(fixed) = suggest_typo(cmd, used) {
             tips.push(Tip::new("Faute de frappe ?", format!("Vouliez-vous dire « {fixed} » ?"), Some(fixed)));
         } else if let Some((_, prog)) = program_of(cmd) {
@@ -175,6 +214,9 @@ pub fn tips_for(command: &str, output: &str, exit: i32, used: &dyn Fn(&str) -> u
                     .ok()
                     .map(|o| String::from_utf8_lossy(&o.stderr).to_string() + &String::from_utf8_lossy(&o.stdout))
                     .and_then(|t| t.lines().map(str::trim).find(|l| l.starts_with("sudo apt install")).map(String::from))
+            } else if cfg!(windows) {
+                // winget est présent sur Windows 10 récent et Windows 11.
+                Some(format!("winget install {prog}"))
             } else {
                 None
             };
@@ -185,8 +227,23 @@ pub fn tips_for(command: &str, output: &str, exit: i32, used: &dyn Fn(&str) -> u
             ));
         }
     }
-    if low.contains("permission denied") || low.contains("permission non accordée") || low.contains("operation not permitted") {
-        if low.contains("docker daemon socket") || low.contains("docker.sock") {
+    if low.contains("permission denied")
+        || low.contains("permission non accordée")
+        || low.contains("operation not permitted")
+        || low.contains("access to the path")
+        || low.contains("accès au chemin")
+        || low.contains("unauthorizedaccess")
+        || low.contains("accès refusé")
+        || low.contains("access is denied")
+    {
+        if cfg!(windows) {
+            tips.push(Tip::new(
+                "Droits insuffisants",
+                "Ce dossier ou ce fichier est protégé : relancez NovaTerm en tant qu'administrateur (clic droit sur l'icône), \
+                 ou vérifiez qu'un autre programme ne garde pas le fichier ouvert.",
+                None,
+            ));
+        } else if low.contains("docker daemon socket") || low.contains("docker.sock") {
             tips.push(Tip::new(
                 "Accès à Docker refusé",
                 "Ajoutez votre compte au groupe docker, puis fermez et rouvrez la session.",
@@ -202,9 +259,22 @@ pub fn tips_for(command: &str, output: &str, exit: i32, used: &dyn Fn(&str) -> u
             tips.push(Tip::new("Droits insuffisants", "Relancer avec les droits administrateur ?", Some(format!("sudo {cmd}"))));
         }
     }
-    if low.contains("address already in use") || low.contains("eaddrinuse") || low.contains("adresse déjà utilisée") {
+    if low.contains("address already in use")
+        || low.contains("eaddrinuse")
+        || low.contains("adresse déjà utilisée")
+        || low.contains("normalement interdite")
+        || low.contains("only one usage of each socket address")
+    {
         let port = find_port(output);
-        let fix = port.map(|p| if cfg!(target_os = "linux") { format!("ss -ltnp | grep :{p}") } else { format!("lsof -i :{p}") });
+        let fix = port.map(|p| {
+            if cfg!(windows) {
+                format!("Get-NetTCPConnection -LocalPort {p} | Select-Object OwningProcess, State")
+            } else if cfg!(target_os = "linux") {
+                format!("ss -ltnp | grep :{p}")
+            } else {
+                format!("lsof -i :{p}")
+            }
+        });
         tips.push(Tip::new(
             "Port déjà utilisé",
             match port {
@@ -214,8 +284,13 @@ pub fn tips_for(command: &str, output: &str, exit: i32, used: &dyn Fn(&str) -> u
             fix,
         ));
     }
-    if low.contains("no space left on device") || low.contains("aucun espace disponible") {
-        tips.push(Tip::new("Disque plein", "Voyez l'espace libre et les plus gros dossiers.", Some("df -h && du -sh ~/* 2>/dev/null | sort -h | tail".into())));
+    if low.contains("no space left on device") || low.contains("aucun espace disponible") || low.contains("there is not enough space on the disk") {
+        let fix = if cfg!(windows) {
+            "Get-PSDrive -PSProvider FileSystem | Select-Object Name, @{n='LibreGo';e={[math]::Round($_.Free/1GB,1)}}"
+        } else {
+            "df -h && du -sh ~/* 2>/dev/null | sort -h | tail"
+        };
+        tips.push(Tip::new("Disque plein", "Voyez l'espace libre et les plus gros dossiers.", Some(fix.into())));
     }
     if let Some(m) = quoted_after(output, "No module named") {
         let pkg = pip_name(m.split('.').next().unwrap_or(m));
@@ -235,11 +310,24 @@ pub fn tips_for(command: &str, output: &str, exit: i32, used: &dyn Fn(&str) -> u
     if let Some(line) = output.lines().map(str::trim).find(|l| l.starts_with("git push --set-upstream") || l.starts_with("git push -u ")) {
         tips.push(Tip::new("Branche sans amont", "Publiez la branche en la reliant au dépôt distant.", Some(line.to_string())));
     }
-    if low.contains("could not resolve host") || low.contains("temporary failure in name resolution") || low.contains("name or service not known") {
-        tips.push(Tip::new("Pas de connexion / DNS", "Le nom du serveur ne peut pas être résolu : vérifiez la connexion réseau.", Some("ping -c 3 1.1.1.1".into())));
+    if low.contains("could not resolve host")
+        || low.contains("temporary failure in name resolution")
+        || low.contains("name or service not known")
+        || low.contains("no such host is known")
+        || low.contains("hôte inconnu")
+    {
+        let fix = if cfg!(windows) { "ping -n 3 1.1.1.1" } else { "ping -c 3 1.1.1.1" };
+        tips.push(Tip::new("Pas de connexion / DNS", "Le nom du serveur ne peut pas être résolu : vérifiez la connexion réseau.", Some(fix.into())));
     }
-    if low.contains("unable to locate package") {
+    if low.contains("unable to locate package") && cfg!(unix) {
         tips.push(Tip::new("Paquet introuvable", "La liste des paquets est peut-être ancienne : mettez-la à jour puis réessayez.", Some(format!("sudo apt update && {cmd}"))));
+    }
+    if cfg!(windows) && (low.contains("cannot be loaded because running scripts is disabled") || low.contains("l'exécution de scripts est désactivée")) {
+        tips.push(Tip::new(
+            "Scripts PowerShell bloqués",
+            "La stratégie d'exécution interdit les scripts. Autorisez-les pour votre compte seulement (sans toucher au système).",
+            Some("Set-ExecutionPolicy -Scope CurrentUser RemoteSigned".into()),
+        ));
     }
     if low.contains("could not get lock") && low.contains("dpkg") {
         tips.push(Tip::new("apt est déjà occupé", "Une autre installation est en cours (Gestionnaire de mises à jour ?). Attendez qu'elle se termine.", Some("ps aux | grep -E 'apt|dpkg' | grep -v grep".into())));
@@ -250,7 +338,7 @@ pub fn tips_for(command: &str, output: &str, exit: i32, used: &dyn Fn(&str) -> u
     if low.contains("could not find `cargo.toml`") {
         tips.push(Tip::new("Pas un projet Rust", "Placez-vous dans le dossier du projet (celui qui contient Cargo.toml).", None));
     }
-    if low.contains("externally-managed-environment") {
+    if low.contains("externally-managed-environment") && cfg!(unix) {
         tips.push(Tip::new(
             "pip protégé par le système",
             "Utilisez un environnement virtuel pour installer des paquets Python.",
@@ -351,11 +439,25 @@ fn option_doc_raw(man: &str, flag: &str) -> Option<String> {
     None
 }
 
+/// Résumé d'une commande d'après `Get-Help` (Windows).
+fn powershell_synopsis(name: &str) -> Option<String> {
+    // Un nom venant de la ligne de commande : on refuse tout ce qui pourrait
+    // s'évader de la chaîne PowerShell.
+    if !name.chars().all(|c| c.is_alphanumeric() || "-_.".contains(c)) {
+        return None;
+    }
+    let script = format!("(Get-Help -Name '{name}' -ErrorAction Ignore).Synopsis");
+    let out = run("powershell", &["-NoProfile", "-NonInteractive", "-Command", &script])?;
+    let s = out.trim();
+    // Get-Help renvoie parfois la ligne de syntaxe elle-même : sans intérêt.
+    (!s.is_empty() && !s.starts_with(name)).then(|| tidy(s))
+}
+
 /// Explique une ligne de commande (lent : à appeler hors de l'interface).
 pub fn explain(line: &str) -> Explanation {
     let mut ex = Explanation { command: line.trim().to_string(), ..Default::default() };
     let Some((_, prog)) = program_of(line) else { return ex };
-    let name = prog.rsplit('/').next().unwrap_or(prog);
+    let name = prog.rsplit(['/', '\\']).next().unwrap_or(prog);
     // Section 1 (commandes) de préférence : « git (1) » plutôt que « Git (3pm) ».
     let summary = run("whatis", &[name])
         .and_then(|w| {
@@ -363,7 +465,9 @@ pub fn explain(line: &str) -> Explanation {
             let pick = lines.iter().find(|l| l.contains("(1)")).or(lines.first()).copied()?;
             pick.split_once(" - ").map(|(_, d)| d.trim().to_string())
         })
-        .filter(|s| !s.is_empty());
+        .filter(|s| !s.is_empty())
+        // Windows : pas de pages man, mais Get-Help décrit applets et programmes.
+        .or_else(|| cfg!(windows).then(|| powershell_synopsis(name)).flatten());
     ex.parts.push(Part {
         token: name.to_string(),
         text: summary.unwrap_or_else(|| "programme (pas de description locale ; installez les pages man ou tldr)".into()),

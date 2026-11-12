@@ -16,6 +16,10 @@ Write-Host "==> Compilation release ($version)" -ForegroundColor Cyan
 cargo build --release
 if ($LASTEXITCODE -ne 0) { throw "cargo build a échoué" }
 $exe = Join-Path $PWD "target\release\novaterm.exe"
+# Compagnon console : imgcat et les options en ligne de commande (--help, --explain…),
+# que l'application fenêtrée ne peut pas afficher dans le terminal.
+$cli = Join-Path $PWD "target\release\novaterm-cli.exe"
+if (-not (Test-Path $cli)) { throw "novaterm-cli.exe manquant : la compilation a-t-elle réussi ?" }
 
 $ico = Join-Path $PWD "assets\icon\novaterm.ico"
 
@@ -23,6 +27,9 @@ Write-Host "==> Archive portable" -ForegroundColor Cyan
 $portable = Join-Path $work "NovaTerm"
 New-Item -ItemType Directory -Force -Path $portable | Out-Null
 Copy-Item $exe $portable
+Copy-Item $cli $portable
+# Permet « imgcat photo.png » depuis cmd (PowerShell a sa propre fonction).
+Copy-Item (Join-Path $PWD "packaging\windows\imgcat.cmd") $portable
 Copy-Item README.md $portable
 Copy-Item $ico $portable
 $zip = Join-Path $dist "NovaTerm-$version-windows-x64.zip"

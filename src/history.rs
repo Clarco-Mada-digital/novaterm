@@ -1,10 +1,10 @@
-//! Historique des commandes (zsh, bash, session) pour les suggestions.
+//! Historique des commandes (zsh, bash, PSReadLine, session) pour les suggestions.
 //!
 //! Tout reste en mémoire, dans NovaTerm : rien n'est envoyé ni réécrit sur disque.
 
 use crate::i18n::t;
 use std::collections::HashMap;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::mpsc::{self, Receiver};
 
 /// Tri des suggestions.
@@ -180,16 +180,70 @@ pub fn parse_bash(bytes: &[u8]) -> Vec<String> {
         .collect()
 }
 
+/// Analyse l'historique de PSReadLine (PowerShell) : une commande par ligne, les
+/// lignes terminées par un accent grave se poursuivent sur la suivante.
+pub fn parse_powershell(bytes: &[u8]) -> Vec<String> {
+    // Le fichier est en UTF-8 (avec BOM éventuel) et en fins de ligne CRLF.
+    let text = String::from_utf8_lossy(bytes).trim_start_matches('\u{feff}').replace("\r\n", "\n");
+    let mut out = Vec::new();
+    let mut current: Option<String> = None;
+    for line in text.lines() {
+        let body = match current.take() {
+            Some(mut prev) => {
+                prev.push('\n');
+                prev.push_str(line);
+                prev
+            }
+            None => line.to_string(),
+        };
+        match body.strip_suffix('`') {
+            Some(stripped) => current = Some(stripped.to_string()),
+            None => out.push(body),
+        }
+    }
+    if let Some(rest) = current {
+        out.push(rest);
+    }
+    out
+}
+
+/// Fichier d'historique de PSReadLine (Windows PowerShell **et** PowerShell 7).
+fn powershell_history_files() -> Vec<PathBuf> {
+    let Some(data) = dirs::data_dir() else { return Vec::new() };
+    let base = data.join("Microsoft").join("Windows").join("PowerShell").join("PSReadLine");
+    // ConsoleHost_history.txt (pwsh et powershell partagent le même dossier).
+    let mut out = vec![base.join("ConsoleHost_history.txt")];
+    // Hôtes personnalisés (Visual Studio Code, etc.).
+    if let Ok(rd) = std::fs::read_dir(&base) {
+        for e in rd.flatten() {
+            let p = e.path();
+            if p.extension().is_some_and(|x| x == "txt") && !out.contains(&p) {
+                out.push(p);
+            }
+        }
+    }
+    out
+}
+
 fn read(path: &Path) -> Option<Vec<u8>> {
     std::fs::read(path).ok()
 }
 
 /// Charge les historiques en arrière-plan (sans bloquer l'interface).
-pub fn load_async(zsh: bool, bash: bool) -> Receiver<History> {
+pub fn load_async(zsh: bool, bash: bool, powershell: bool) -> Receiver<History> {
     let (tx, rx) = mpsc::channel();
     std::thread::spawn(move || {
         let mut h = History::default();
         let home = dirs::home_dir().unwrap_or_default();
+        if powershell {
+            for path in powershell_history_files() {
+                if let Some(b) = read(&path) {
+                    for c in parse_powershell(&b) {
+                        h.push(&c);
+                    }
+                }
+            }
+        }
         if bash {
             let path = std::env::var("HISTFILE")
                 .ok()
@@ -238,6 +292,16 @@ mod tests {
     #[test]
     fn bash_timestamps() {
         assert_eq!(parse_bash(b"#1700000000\nls\n#comment\n"), vec!["ls", "#comment"]);
+    }
+
+    #[test]
+    fn powershell_history() {
+        // BOM, CRLF et continuation par accent grave.
+        let raw = "\u{feff}git status\r\nGet-ChildItem -Recurse `\r\n  -Filter *.rs\r\nnpm run dev\r\n";
+        assert_eq!(
+            parse_powershell(raw.as_bytes()),
+            vec!["git status", "Get-ChildItem -Recurse \n  -Filter *.rs", "npm run dev"]
+        );
     }
 
     #[test]

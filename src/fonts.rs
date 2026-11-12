@@ -27,8 +27,14 @@ const FALLBACKS: &[&str] = &[
 ];
 #[cfg(target_os = "windows")]
 const FALLBACKS: &[&str] = &[
+    // Cascadia Mono est livrée avec Windows 11 et Windows Terminal : meilleurs
+    // caractères semi-graphiques (bordures, barres de progression) que Consolas.
+    "C:\\Windows\\Fonts\\CascadiaMono.ttf",
+    "C:\\Windows\\Fonts\\CascadiaCode.ttf",
     "C:\\Windows\\Fonts\\consola.ttf",
     "C:\\Windows\\Fonts\\seguisym.ttf",
+    // Sans elle, les emoji des prompts (oh-my-posh, starship) restent des carrés.
+    "C:\\Windows\\Fonts\\seguiemj.ttf",
     "C:\\Windows\\Fonts\\segoeui.ttf",
 ];
 #[cfg(target_os = "macos")]

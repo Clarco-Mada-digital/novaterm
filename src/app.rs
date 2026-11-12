@@ -250,7 +250,7 @@ pub struct NovaApp {
     reported_focus: Option<u64>,
     history: History,
     history_rx: Option<Receiver<History>>,
-    history_sig: (bool, bool),
+    history_sig: (bool, bool, bool),
     /// Commandes exécutées pendant la session (rejouées après un rechargement).
     session_cmds: Vec<String>,
     suggest: Suggest,
@@ -558,8 +558,8 @@ impl NovaApp {
             zoom_accum: 0.0,
             reported_focus: None,
             history: History::default(),
-            history_rx: Some(history::load_async(config.history_zsh, config.history_bash)),
-            history_sig: (config.history_zsh, config.history_bash),
+            history_rx: Some(history::load_async(config.history_zsh, config.history_bash, config.history_powershell)),
+            history_sig: (config.history_zsh, config.history_bash, config.history_powershell),
             session_cmds: Vec::new(),
             suggest: Suggest::default(),
             history_popup: None,
@@ -2014,10 +2014,10 @@ impl NovaApp {
                 self.suggest.buffer.clear();
             }
         }
-        let sig = (self.config.history_zsh, self.config.history_bash);
+        let sig = (self.config.history_zsh, self.config.history_bash, self.config.history_powershell);
         if sig != self.history_sig {
             self.history_sig = sig;
-            self.history_rx = Some(history::load_async(sig.0, sig.1));
+            self.history_rx = Some(history::load_async(sig.0, sig.1, sig.2));
         }
         for pane in self.panes.values_mut() {
             for cmd in pane.executed.drain(..) {

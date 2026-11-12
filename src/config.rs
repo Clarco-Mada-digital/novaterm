@@ -314,6 +314,8 @@ pub struct Config {
     pub suggest_opacity: f32,
     pub history_zsh: bool,
     pub history_bash: bool,
+    /// Historique de PSReadLine (PowerShell), utile sous Windows.
+    pub history_powershell: bool,
     /// Débuts de commandes à ne jamais suggérer (un par ligne).
     pub suggest_ignore: String,
 
@@ -493,6 +495,7 @@ impl Default for Config {
             suggest_opacity: 0.45,
             history_zsh: true,
             history_bash: true,
+            history_powershell: true,
             suggest_ignore: "rm -rf\n".to_string(),
             completions: true,
             blocks_enabled: true,
