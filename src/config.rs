@@ -393,6 +393,22 @@ pub struct Config {
     /// Proposer d'ajouter l'AppImage au menu au lancement.
     pub appimage_prompt: bool,
 
+    // --- Assistant IA (optionnel, désactivé par défaut) ---
+    pub ai_enabled: bool,
+    pub ai_provider: crate::ai::Provider,
+    /// Adresse du service (vide = adresse par défaut du service).
+    pub ai_base_url: String,
+    /// Modèle (vide = modèle par défaut du service).
+    pub ai_model: String,
+    /// Montrer ce qui sera envoyé (sortie, diff…) et attendre une confirmation.
+    pub ai_confirm: bool,
+    /// Masquer mots de passe, jetons et clés avant l'envoi.
+    pub ai_mask_secrets: bool,
+    /// Nombre maximal de lignes de sortie envoyées (les dernières).
+    pub ai_max_lines: usize,
+    /// Bouton « ✨ » sur les commandes et dans les astuces.
+    pub ai_block_button: bool,
+
     // --- Sécurité ---
     /// Les programmes peuvent copier dans le presse-papiers (OSC 52, vim, tmux…).
     pub osc52_write: bool,
@@ -506,6 +522,14 @@ impl Default for Config {
             quake_hotkey: "F12".to_string(),
             cursor_blink_timeout: 15,
             appimage_prompt: true,
+            ai_enabled: false,
+            ai_provider: crate::ai::Provider::Ollama,
+            ai_base_url: String::new(),
+            ai_model: String::new(),
+            ai_confirm: true,
+            ai_mask_secrets: true,
+            ai_max_lines: 120,
+            ai_block_button: true,
             language: crate::i18n::Language::Auto,
             update_check: true,
             update_prerelease: true,

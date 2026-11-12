@@ -611,3 +611,85 @@ Accès à Docker refusé	Docker access denied
 Ajoutez votre compte au groupe docker, puis fermez et rouvrez la session.	Add your account to the docker group, then log out and back in.
 Un autre programme utilise déjà ce port.	Another program is already using this port.
   (sans gras)	  (no bold)
+# Assistant IA (0.1.0)
+Autre serveur compatible OpenAI	Other OpenAI-compatible server
+curl est introuvable : installez-le pour utiliser l'assistant	curl not found: install it to use the assistant
+Ollama ne répond pas : lancez « ollama serve » (ou l'application Ollama)	Ollama is not responding: run "ollama serve" (or the Ollama app)
+Connexion impossible	Connection failed
+ — clé d'API refusée (Paramètres → Assistant IA)	 — API key rejected (Settings → AI assistant)
+ — modèle ou adresse introuvable	 — model or address not found
+ — trop de requêtes ou quota épuisé	 — too many requests or quota exceeded
+Aucune clé d'API pour {} : ajoutez-la dans Paramètres → Assistant IA (ou variable {}).	No API key for {}: add it in Settings → AI assistant (or the {} variable).
+[clé privée masquée]	[private key hidden]
+Question	Question
+Expliquer l'erreur	Explain the error
+Résumer la sortie	Summarize the output
+Expliquer la commande	Explain the command
+Message de commit	Commit message
+git est introuvable	git not found
+Rien n'est indexé : faites d'abord « git add … »	Nothing is staged: run "git add …" first
+L'assistant IA est désactivé : activez-le dans Paramètres → Assistant IA	The AI assistant is disabled: enable it in Settings → AI assistant
+Aucune commande proposée	No command suggested
+⚠ La commande contient « [masqué] » : remplacez-le par la vraie valeur avant de l'exécuter	⚠ The command contains "[masqué]" (hidden value): replace it with the real value before running it
+Commande insérée : vérifiez-la, puis Entrée pour l'exécuter	Command inserted: check it, then press Enter to run it
+Aucune commande terminée (intégration shell inactive ?) : sélectionnez la sortie à analyser	No finished command (shell integration inactive?): select the output to analyze
+Dossier courant inconnu (intégration shell inactive ?)	Current directory unknown (shell integration inactive?)
+Assistant IA	AI assistant
+local	local
+en ligne	online
+· {} secret(s) masqué(s)	· {} secret(s) hidden
+Ceci sera envoyé :	This will be sent:
+Réponse en cours…  (Échap pour arrêter)	Answering…  (Esc to stop)
+Réessayer	Retry
+Envoyer  (Entrée)	Send  (Enter)
+Annuler  (Échap)	Cancel  (Esc)
+Paramètres → Assistant IA pour ne plus confirmer	Settings → AI assistant to stop confirming
+Décrivez ce que vous voulez faire, ex. : trouver les fichiers de plus de 100 Mo	Describe what you want to do, e.g. find files larger than 100 MB
+Question de suivi…  (Entrée pour envoyer, Échap pour fermer)	Follow-up question…  (Enter to send, Esc to close)
+Les commandes ne sont jamais exécutées : « Insérer » les place sur la ligne, vous validez avec Entrée.	Commands are never run: "Insert" puts them on the line, you confirm with Enter.
+insérer la première commande	insert the first command
+⏎ Insérer	⏎ Insert
+📋 Copier	📋 Copy
+Assistant IA : expliquer l'erreur	AI assistant: explain the error
+Assistant IA : résumer la sortie	AI assistant: summarize the output
+✨ Demander à l'assistant IA	✨ Ask the AI assistant
+Assistant IA : poser une question / décrire une commande	AI assistant: ask a question / describe a command
+Assistant IA : expliquer l'erreur ou résumer la dernière commande	AI assistant: explain the error or summarize the last command
+Assistant IA : expliquer la commande	AI assistant: explain the command
+Assistant IA : message de commit (git)	AI assistant: commit message (git)
+Optionnel et désactivé par défaut : modèle local (Ollama) ou service en ligne avec votre clé.	Optional and off by default: a local model (Ollama) or an online service with your own key.
+ia ai assistant intelligence artificielle llm ollama openai chatgpt claude anthropic gemini mistral groq openrouter clé api modèle commit	ai assistant artificial intelligence llm ollama openai chatgpt claude anthropic gemini mistral groq openrouter api key model commit
+Activer l'assistant IA	Enable the AI assistant
+Désactivé, NovaTerm n'envoie rien à aucune IA. Activé, rien n'est envoyé sans une action de votre part, et aucune commande n'est jamais exécutée à votre place : elles sont seulement proposées.	When disabled, NovaTerm sends nothing to any AI. When enabled, nothing is sent without an action from you, and no command is ever run for you: they are only suggested.
+Demander : {} · Expliquer l'erreur / résumer la dernière commande : {} · aussi « ✨ » au survol d'une commande et dans la palette	Ask: {} · Explain the error / summarize the last command: {} · also "✨" when hovering a command, and in the palette
+Service	Service
+Modèle	Model
+Choisir…	Choose…
+Lister les modèles	List models
+Adresse	Address
+Aucun modèle trouvé	No model found
+{} modèles disponibles	{} models available
+🔒 Local : vos données ne quittent pas cette machine.	🔒 Local: your data never leaves this machine.
+🌐 En ligne : ce que vous envoyez part chez ce service, selon ses conditions d'utilisation.	🌐 Online: what you send goes to this service, under its terms of use.
+Installez Ollama, puis téléchargez un modèle : « ollama pull llama3.2 » (ou qwen2.5-coder pour le code).	Install Ollama, then download a model: "ollama pull llama3.2" (or qwen2.5-coder for code).
+Clé d'API	API key
+✔ Clé enregistrée (fichier ai-keys.toml, lisible par vous seul)	✔ Key saved (ai-keys.toml file, readable only by you)
+✔ Clé lue dans la variable d'environnement {}	✔ Key read from the {} environment variable
+✖ Aucune clé : collez-la ci-dessous, ou définissez la variable {}	✖ No key: paste it below, or set the {} variable
+Pas de clé nécessaire pour ce service (sauf s'il en demande une).	No key needed for this service (unless it asks for one).
+Coller la clé ici	Paste the key here
+Clé enregistrée	Key saved
+Supprimer la clé	Delete the key
+Clé supprimée	Key deleted
+Télécharger Ollama	Download Ollama
+Obtenir une clé	Get a key
+La clé n'est jamais écrite dans config.toml ni affichée ; elle est transmise à curl par un canal privé, pas dans la ligne de commande.	The key is never written to config.toml or displayed; it is passed to curl through a private channel, not on the command line.
+Essai	Test
+Tester la connexion	Test the connection
+✔ Le service répond	✔ The service responds
+Confidentialité	Privacy
+Montrer ce qui sera envoyé (sortie, diff…) et attendre ma confirmation	Show what will be sent (output, diff…) and wait for my confirmation
+Masquer mots de passe, jetons et clés avant l'envoi	Hide passwords, tokens and keys before sending
+Lignes de sortie envoyées au maximum	Maximum output lines sent
+Bouton « ✨ » au survol des commandes et dans les astuces	"✨" button when hovering commands and in tips
+Seules les dernières lignes de la commande concernée sont envoyées, jamais tout le terminal.	Only the last lines of the command concerned are sent, never the whole terminal.

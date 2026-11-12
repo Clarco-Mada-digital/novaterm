@@ -100,6 +100,11 @@ pub enum Action {
     FixLastCommand,
     ExplainCommand,
     CheckUpdates,
+    // Assistant IA
+    AiAsk,
+    AiAnalyzeLast,
+    AiExplainCommand,
+    AiCommitMessage,
 }
 
 pub const ALL_ACTIONS: &[Action] = &[
@@ -185,6 +190,10 @@ pub const ALL_ACTIONS: &[Action] = &[
     Action::FixLastCommand,
     Action::ExplainCommand,
     Action::CheckUpdates,
+    Action::AiAsk,
+    Action::AiAnalyzeLast,
+    Action::AiExplainCommand,
+    Action::AiCommitMessage,
 ];
 
 impl Action {
@@ -274,6 +283,10 @@ impl Action {
             FixLastCommand => "fix_last_command",
             ExplainCommand => "explain_command",
             CheckUpdates => "check_updates",
+            AiAsk => "ai_ask",
+            AiAnalyzeLast => "ai_analyze_last",
+            AiExplainCommand => "ai_explain_command",
+            AiCommitMessage => "ai_commit_message",
         }
     }
 
@@ -367,6 +380,10 @@ impl Action {
             FixLastCommand => t("Corriger la dernière commande (astuce)"),
             ExplainCommand => t("Expliquer la commande (hors ligne)"),
             CheckUpdates => t("Rechercher une mise à jour"),
+            AiAsk => t("Assistant IA : poser une question / décrire une commande"),
+            AiAnalyzeLast => t("Assistant IA : expliquer l'erreur ou résumer la dernière commande"),
+            AiExplainCommand => t("Assistant IA : expliquer la commande"),
+            AiCommitMessage => t("Assistant IA : message de commit (git)"),
         }
     }
 
@@ -389,6 +406,7 @@ impl Action {
             PrevCommand | NextCommand | CopyLastOutput | CopyLastCommand | RerunLast => t("Blocs de commandes"),
             ToggleBroadcast | Snippets | Profiles | SaveProfile | ImportTheme | QuickTerminal | CheckUpdates => t("Outils"),
             FixLastCommand | ExplainCommand => t("Aides"),
+            AiAsk | AiAnalyzeLast | AiExplainCommand | AiCommitMessage => t("Assistant IA"),
             _ => t("Fenêtre"),
         }
     }
@@ -627,6 +645,10 @@ pub fn default_bindings(action: Action) -> Vec<KeyCombo> {
         FixLastCommand => &["Ctrl+Alt+F"],
         ExplainCommand => &["Ctrl+Alt+X"],
         CheckUpdates => &[],
+        AiAsk => &["Ctrl+Alt+A"],
+        AiAnalyzeLast => &["Ctrl+Alt+I"],
+        AiExplainCommand => &[],
+        AiCommitMessage => &[],
     };
     list.iter().map(|s| c(s)).collect()
 }

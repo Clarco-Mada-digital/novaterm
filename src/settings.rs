@@ -28,6 +28,7 @@ pub enum Page {
     Mouse,
     Suggestions,
     Helpers,
+    Ai,
     Blocks,
     Links,
     Images,
@@ -43,7 +44,7 @@ impl Page {
     const GROUPS: [(&'static str, &'static [Page]); 5] = [
         ("APPARENCE", &[Page::Appearance, Page::Font, Page::Cursor, Page::Window]),
         ("TERMINAL", &[Page::Terminal, Page::Mouse, Page::Shortcuts]),
-        ("PRODUCTIVITÉ", &[Page::Suggestions, Page::Helpers, Page::Blocks, Page::Links, Page::Snippets, Page::Images]),
+        ("PRODUCTIVITÉ", &[Page::Suggestions, Page::Helpers, Page::Ai, Page::Blocks, Page::Links, Page::Snippets, Page::Images]),
         ("ORGANISATION", &[Page::Session, Page::Quake]),
         ("SYSTÈME", &[Page::Advanced]),
     ];
@@ -58,6 +59,7 @@ impl Page {
             Page::Mouse => "🖱",
             Page::Suggestions => "✨",
             Page::Helpers => "💡",
+            Page::Ai => "💬",
             Page::Blocks => "▤",
             Page::Links => "🔗",
             Page::Images => "🖼",
@@ -79,6 +81,7 @@ impl Page {
             Page::Mouse => t("Souris"),
             Page::Suggestions => t("Suggestions"),
             Page::Helpers => t("Aides"),
+            Page::Ai => t("Assistant IA"),
             Page::Blocks => t("Blocs & alertes"),
             Page::Links => t("Liens & éditeur"),
             Page::Images => t("Images"),
@@ -100,6 +103,7 @@ impl Page {
             Page::Mouse => t("Focus, presse-papiers, défilement et souris dans les programmes."),
             Page::Suggestions => t("Suite de commande proposée pendant la frappe et complétion intelligente."),
             Page::Helpers => t("Corrections et explications 100 % locales, sans IA."),
+            Page::Ai => t("Optionnel et désactivé par défaut : modèle local (Ollama) ou service en ligne avec votre clé."),
             Page::Blocks => t("Chaque commande devient un bloc avec son statut ; alertes de fin de tâche."),
             Page::Links => t("URL, fichiers et erreurs cliquables, et l'éditeur qui les ouvre."),
             Page::Images => t("Afficher des images directement dans le terminal."),
@@ -122,6 +126,7 @@ impl Page {
             Page::Mouse => t("souris focus suit copier sélection clic milieu droit molette défilement zoom lien htop vim"),
             Page::Suggestions => t("suggestion autosuggestion historique complétion completion git docker npm intégration shell zsh"),
             Page::Helpers => t("aide astuce erreur faute frappe typo corriger expliquer man tldr"),
+            Page::Ai => t("ia ai assistant intelligence artificielle llm ollama openai chatgpt claude anthropic gemini mistral groq openrouter clé api modèle commit"),
             Page::Blocks => t("bloc commande statut durée badge notification alerte son fin tâche onglet pastille"),
             Page::Links => t("lien url fichier chemin erreur éditeur vscode code vim nano ctrl+clic"),
             Page::Images => t("image imgcat kitty iterm photo svg png"),
@@ -162,6 +167,18 @@ pub struct SettingsUi {
     pub appimage_note: Option<String>,
     /// Recherche dans les paramètres.
     pub search: String,
+    pub ai: AiSettingsUi,
+}
+
+/// État de la page « Assistant IA ».
+#[derive(Default)]
+pub struct AiSettingsUi {
+    key_input: String,
+    note: Option<(bool, String)>,
+    models: Vec<String>,
+    models_rx: Option<std::sync::mpsc::Receiver<Result<Vec<String>, String>>>,
+    test: Option<crate::ai::Job>,
+    test_text: String,
 }
 
 /// Informations d'état affichées dans les paramètres.
@@ -355,6 +372,7 @@ fn body(
             Page::Mouse => page_mouse(ui, config),
             Page::Suggestions => page_suggestions(ui, config, info, out, bindings),
             Page::Helpers => page_helpers(ui, config, bindings),
+            Page::Ai => page_ai(ui, config, st, bindings),
             Page::Blocks => page_blocks(ui, config, bindings),
             Page::Links => page_links(ui, config),
             Page::Images => page_images(ui, config),
@@ -875,6 +893,190 @@ fn page_helpers(ui: &mut egui::Ui, config: &mut Config, bindings: &Bindings) {
             &crate::i18n::tf("Corriger la dernière commande : {} · Expliquer : {} (ou « ? » au survol d'une commande)", &[&bindings.first_shortcut(Action::FixLastCommand), &bindings.first_shortcut(Action::ExplainCommand)]),
         );
         hint(ui, t("Pour des exemples en plus des explications : sudo apt install tldr"));
+    });
+}
+
+fn page_ai(ui: &mut egui::Ui, config: &mut Config, st: &mut SettingsUi, bindings: &Bindings) {
+    use crate::ai::{self, Provider};
+    let s = &mut st.ai;
+    card(ui, t("Assistant IA"), |ui| {
+        ui.checkbox(&mut config.ai_enabled, RichText::new(t("Activer l'assistant IA")).strong());
+        hint(ui, t("Désactivé, NovaTerm n'envoie rien à aucune IA. Activé, rien n'est envoyé sans une action de votre part, et aucune commande n'est jamais exécutée à votre place : elles sont seulement proposées."));
+        hint(
+            ui,
+            &crate::i18n::tf(
+                "Demander : {} · Expliquer l'erreur / résumer la dernière commande : {} · aussi « ✨ » au survol d'une commande et dans la palette",
+                &[&bindings.first_shortcut(Action::AiAsk), &bindings.first_shortcut(Action::AiAnalyzeLast)],
+            ),
+        );
+    });
+    ui.add_enabled_ui(config.ai_enabled, |ui| {
+        card(ui, t("Service"), |ui| {
+            egui::Grid::new("ai_grid").num_columns(2).spacing([12.0, 8.0]).show(ui, |ui| {
+                ui.label(t("Service"));
+                let before = config.ai_provider;
+                egui::ComboBox::from_id_salt("ai_provider").selected_text(config.ai_provider.label()).width(260.0).show_ui(ui, |ui| {
+                    for p in ai::PROVIDERS {
+                        ui.selectable_value(&mut config.ai_provider, p, p.label());
+                    }
+                });
+                if before != config.ai_provider {
+                    config.ai_model.clear();
+                    config.ai_base_url.clear();
+                    s.models.clear();
+                    s.key_input.clear();
+                    s.note = None;
+                }
+                ui.end_row();
+                let p = config.ai_provider;
+                ui.label(t("Modèle"));
+                ui.horizontal(|ui| {
+                    ui.add(egui::TextEdit::singleline(&mut config.ai_model).hint_text(p.default_model()).desired_width(220.0));
+                    if !s.models.is_empty() {
+                        egui::ComboBox::from_id_salt("ai_models").selected_text(t("Choisir…")).show_ui(ui, |ui| {
+                            for m in &s.models {
+                                if ui.selectable_label(config.ai_model == *m, m).clicked() {
+                                    config.ai_model = m.clone();
+                                }
+                            }
+                        });
+                    }
+                    if s.models_rx.is_some() {
+                        ui.spinner();
+                    } else if ui.button(t("Lister les modèles")).clicked() {
+                        let ep = ai::Endpoint::new(p, &config.ai_base_url, &config.ai_model);
+                        let (tx, rx) = std::sync::mpsc::channel();
+                        let ctx = ui.ctx().clone();
+                        std::thread::spawn(move || {
+                            let _ = tx.send(ai::list_models(&ep));
+                            ctx.request_repaint();
+                        });
+                        s.models_rx = Some(rx);
+                    }
+                });
+                ui.end_row();
+                ui.label(t("Adresse"));
+                ui.add(egui::TextEdit::singleline(&mut config.ai_base_url).hint_text(p.default_base()).desired_width(320.0));
+                ui.end_row();
+            });
+            if let Some(rx) = &s.models_rx {
+                if let Ok(r) = rx.try_recv() {
+                    s.models_rx = None;
+                    match r {
+                        Ok(list) if list.is_empty() => s.note = Some((false, t("Aucun modèle trouvé").to_string())),
+                        Ok(list) => {
+                            s.note = Some((true, crate::i18n::tf("{} modèles disponibles", &[&list.len()])));
+                            s.models = list;
+                        }
+                        Err(e) => s.note = Some((false, e)),
+                    }
+                }
+            }
+            let p = config.ai_provider;
+            let local = ai::is_local(if config.ai_base_url.trim().is_empty() { p.default_base() } else { &config.ai_base_url });
+            if local {
+                ui.label(RichText::new(t("🔒 Local : vos données ne quittent pas cette machine.")).color(Color32::from_rgb(110, 190, 120)));
+            } else {
+                ui.label(RichText::new(t("🌐 En ligne : ce que vous envoyez part chez ce service, selon ses conditions d'utilisation.")).color(Color32::from_rgb(220, 170, 80)));
+            }
+            if p == Provider::Ollama {
+                hint(ui, t("Installez Ollama, puis téléchargez un modèle : « ollama pull llama3.2 » (ou qwen2.5-coder pour le code)."));
+            }
+        });
+
+        let p = config.ai_provider;
+        card(ui, t("Clé d'API"), |ui| {
+            let (_, source) = ai::key_for(p);
+            match source {
+                ai::KeySource::File => {
+                    ui.label(RichText::new(t("✔ Clé enregistrée (fichier ai-keys.toml, lisible par vous seul)")).color(Color32::from_rgb(110, 190, 120)));
+                }
+                ai::KeySource::Env(var) => {
+                    ui.label(RichText::new(crate::i18n::tf("✔ Clé lue dans la variable d'environnement {}", &[&var])).color(Color32::from_rgb(110, 190, 120)));
+                }
+                ai::KeySource::Missing if p.needs_key() => {
+                    ui.label(RichText::new(crate::i18n::tf("✖ Aucune clé : collez-la ci-dessous, ou définissez la variable {}", &[&p.env_var()])).color(Color32::from_rgb(220, 120, 110)));
+                }
+                ai::KeySource::Missing => hint(ui, t("Pas de clé nécessaire pour ce service (sauf s'il en demande une).")),
+            }
+            ui.horizontal(|ui| {
+                ui.add(egui::TextEdit::singleline(&mut s.key_input).password(true).hint_text(t("Coller la clé ici")).desired_width(300.0));
+                if ui.add_enabled(!s.key_input.trim().is_empty(), egui::Button::new(t("Enregistrer"))).clicked() {
+                    s.note = Some(match ai::save_key(p, &s.key_input) {
+                        Ok(()) => (true, t("Clé enregistrée").to_string()),
+                        Err(e) => (false, e),
+                    });
+                    s.key_input.clear();
+                }
+                if source == ai::KeySource::File && ui.button(t("Supprimer la clé")).clicked() {
+                    s.note = Some(match ai::save_key(p, "") {
+                        Ok(()) => (true, t("Clé supprimée").to_string()),
+                        Err(e) => (false, e),
+                    });
+                }
+            });
+            if let Some(url) = p.key_url() {
+                ui.hyperlink_to(if p == Provider::Ollama { t("Télécharger Ollama") } else { t("Obtenir une clé") }, url);
+            }
+            hint(ui, t("La clé n'est jamais écrite dans config.toml ni affichée ; elle est transmise à curl par un canal privé, pas dans la ligne de commande."));
+        });
+
+        card(ui, t("Essai"), |ui| {
+            ui.horizontal(|ui| {
+                let running = s.test.is_some();
+                if ui.add_enabled(!running, egui::Button::new(t("Tester la connexion"))).clicked() {
+                    let ep = ai::Endpoint::new(p, &config.ai_base_url, &config.ai_model);
+                    let ctx = ui.ctx().clone();
+                    s.test_text.clear();
+                    s.note = None;
+                    s.test = Some(ai::start(
+                        ep,
+                        "Answer in one short sentence.".into(),
+                        vec![ai::Message { role: ai::Role::User, content: "Say hello to the NovaTerm user.".into() }],
+                        move || ctx.request_repaint(),
+                    ));
+                }
+                if running {
+                    ui.spinner();
+                }
+            });
+            if let Some(job) = &s.test {
+                let mut finished = false;
+                while let Ok(ev) = job.rx.try_recv() {
+                    match ev {
+                        ai::Event::Chunk(c) => s.test_text.push_str(&c),
+                        ai::Event::Done => {
+                            finished = true;
+                            s.note = Some((true, t("✔ Le service répond").to_string()));
+                        }
+                        ai::Event::Error(e) => {
+                            finished = true;
+                            s.note = Some((false, e));
+                        }
+                    }
+                }
+                if finished {
+                    s.test = None;
+                }
+            }
+            if !s.test_text.is_empty() {
+                ui.label(RichText::new(&s.test_text).italics());
+            }
+            if let Some((ok, msg)) = &s.note {
+                ui.label(RichText::new(msg).color(if *ok { Color32::from_rgb(110, 190, 120) } else { Color32::from_rgb(220, 120, 110) }));
+            }
+        });
+
+        card(ui, t("Confidentialité"), |ui| {
+            ui.checkbox(&mut config.ai_confirm, t("Montrer ce qui sera envoyé (sortie, diff…) et attendre ma confirmation"));
+            ui.checkbox(&mut config.ai_mask_secrets, t("Masquer mots de passe, jetons et clés avant l'envoi"));
+            ui.horizontal(|ui| {
+                ui.label(t("Lignes de sortie envoyées au maximum"));
+                ui.add(egui::Slider::new(&mut config.ai_max_lines, 20..=1000).logarithmic(true));
+            });
+            ui.checkbox(&mut config.ai_block_button, t("Bouton « ✨ » au survol des commandes et dans les astuces"));
+            hint(ui, t("Seules les dernières lignes de la commande concernée sont envoyées, jamais tout le terminal."));
+        });
     });
 }
 

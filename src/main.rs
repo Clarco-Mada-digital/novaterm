@@ -3,6 +3,7 @@
 // Pas de fenêtre console noire derrière l'application sous Windows (en release).
 #![cfg_attr(all(windows, not(debug_assertions)), windows_subsystem = "windows")]
 
+mod ai;
 mod app;
 mod appimage;
 mod blocks;

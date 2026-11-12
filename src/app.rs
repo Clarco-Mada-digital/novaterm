@@ -117,11 +117,16 @@ struct Suggest {
     selected: usize,
 }
 
+#[path = "ai_panel.rs"]
+mod ai_panel;
+use ai_panel::{ai_input_id, AiPanel};
+
 /// Action déclenchée depuis la barre d'un bloc de commande.
 #[derive(Clone, Copy)]
 enum BlockAct {
     ShowTips,
     Explain,
+    Ai,
     CopyCommand,
     CopyOutput,
     Rerun,
@@ -171,6 +176,9 @@ enum UiCmd {
     HistoryMove(i32),
     HistoryRun(bool),
     HistoryClose,
+    AiSubmit,
+    AiEscape,
+    AiInsert,
 }
 
 /// Entrées clavier collectées dans `raw_input_hook`, traitées au début de `update`.
@@ -287,6 +295,8 @@ pub struct NovaApp {
     explain_rx: Option<Receiver<crate::helpers::Explanation>>,
     explanation: Option<crate::helpers::Explanation>,
     explain_open: bool,
+    /// Fenêtre de l'assistant IA.
+    ai: Option<AiPanel>,
     // --- Mises à jour ---
     update_rx: Option<Receiver<Result<Option<crate::update::UpdateInfo>, String>>>,
     update_info: Option<crate::update::UpdateInfo>,
@@ -576,6 +586,7 @@ impl NovaApp {
             explain_rx: None,
             explanation: None,
             explain_open: false,
+            ai: None,
             update_rx: None,
             update_info: None,
             update_manual: false,
@@ -1699,6 +1710,18 @@ impl NovaApp {
                 }
             }
             CheckUpdates => self.start_update_check(true),
+            AiAsk => {
+                if self.ai.is_some() {
+                    self.ai = None;
+                    self.clear_egui_focus();
+                } else {
+                    self.palette = None;
+                    self.ai_open(crate::ai::Task::Ask { question: String::new() });
+                }
+            }
+            AiAnalyzeLast => self.ai_analyze_last(),
+            AiExplainCommand => self.ai_explain_command(None),
+            AiCommitMessage => self.ai_commit_message(),
             ExplainCommand => {
                 if !self.config.help_explain {
                     self.toast(t("« Expliquer la commande » est désactivé (Paramètres → Aides)"));
@@ -1953,6 +1976,9 @@ impl NovaApp {
                         self.history_popup = None;
                         self.clear_egui_focus();
                     }
+                    UiCmd::AiSubmit => self.ai_submit(),
+                    UiCmd::AiEscape => self.ai_escape(),
+                    UiCmd::AiInsert => self.ai_insert(None),
                 },
             }
         }
@@ -2212,6 +2238,12 @@ impl NovaApp {
                                     if self.config.help_explain && b(ui, "?", t("Expliquer la commande (hors ligne)")) {
                                         action = Some((id, vb.id, BlockAct::Explain));
                                     }
+                                    if self.config.ai_enabled && self.config.ai_block_button && block.finished.is_some() {
+                                        let tip = if block.finished.is_some_and(|(c, _)| c != 0) { t("Assistant IA : expliquer l'erreur") } else { t("Assistant IA : résumer la sortie") };
+                                        if b(ui, "✨", tip) {
+                                            action = Some((id, vb.id, BlockAct::Ai));
+                                        }
+                                    }
                                     if b(ui, "↻", t("Relancer la commande")) {
                                         action = Some((id, vb.id, BlockAct::Rerun));
                                     }
@@ -2432,6 +2464,7 @@ impl NovaApp {
         }
         let mut open = true;
         let mut example_cmd: Option<String> = None;
+        let mut ask_ai: Option<String> = None;
         egui::Window::new(t("💡 Explication"))
             .open(&mut open)
             .collapsible(false)
@@ -2475,8 +2508,16 @@ impl NovaApp {
                         ui.label(egui::RichText::new(t("Astuce : installez « tldr » pour voir aussi des exemples (sudo apt install tldr).")).small().color(Color32::GRAY));
                     }
                     ui.label(egui::RichText::new(t("Explication 100 % locale : pages man et tldr de votre système, sans IA ni Internet.")).small().color(Color32::GRAY));
+                    if self.config.ai_enabled && ui.button(t("✨ Demander à l'assistant IA")).clicked() {
+                        ask_ai = Some(ex.command.clone());
+                    }
                 }
             });
+        if let Some(cmd) = ask_ai {
+            self.explain_open = false;
+            self.ai_explain_command(Some(cmd));
+            return;
+        }
         if let Some(c) = example_cmd {
             if let Some(id) = self.focused_id() {
                 self.insert_command(id, &c, false);
@@ -2496,6 +2537,7 @@ impl NovaApp {
         };
         let mut open = true;
         let mut insert: Option<String> = None;
+        let mut ask_ai = false;
         egui::Window::new(t("💡 Astuces")).open(&mut open).collapsible(false).resizable(false).default_width(480.0).show(ctx, |ui| {
             for tip in &tips {
                 ui.label(egui::RichText::new(crate::i18n::tr(&tip.title)).strong());
@@ -2514,7 +2556,15 @@ impl NovaApp {
                 ui.add_space(8.0);
             }
             ui.label(egui::RichText::new(t("Astuces locales, sans IA. Rien n'est exécuté sans vous.")).small().color(Color32::GRAY));
+            if self.config.ai_enabled && self.config.ai_block_button && ui.button(t("✨ Demander à l'assistant IA")).clicked() {
+                ask_ai = true;
+            }
         });
+        if ask_ai {
+            self.tip_popup = None;
+            self.ai_analyze_block(pid, bid);
+            return;
+        }
         if let Some(fix) = insert {
             self.insert_command(pid, &fix, false);
             self.tip_popup = None;
@@ -2526,6 +2576,7 @@ impl NovaApp {
     fn block_action(&mut self, pane_id: u64, block: u32, act: BlockAct) {
         match act {
             BlockAct::ShowTips => self.tip_popup = Some((pane_id, block)),
+            BlockAct::Ai => self.ai_analyze_block(pane_id, block),
             BlockAct::Explain => {
                 if let Some(cmd) = self.block_command(pane_id, block) {
                     self.start_explain(cmd);
@@ -4040,6 +4091,11 @@ impl NovaApp {
                         p.query.push_str(&t);
                         p.selected = 0;
                     }
+                    None if self.ai.is_some() => {
+                        if let Some(ai) = self.ai.as_mut() {
+                            ai.demo_type(&t);
+                        }
+                    }
                     None => self.pending.push(Pending::Text(t)),
                 }
                 demo.resume_at = time + 0.15;
@@ -4051,6 +4107,10 @@ impl NovaApp {
                     Some(action) => self.pending.push(Pending::Action(action)),
                     None => match (self.palette.is_some(), c.key) {
                         (true, Key::Escape) => self.pending.push(Pending::Ui(UiCmd::PaletteClose)),
+                        (false, Key::Escape) if self.ai.is_some() => self.pending.push(Pending::Ui(UiCmd::AiEscape)),
+                        (false, Key::Enter) if self.ai.is_some() => {
+                            self.pending.push(Pending::Ui(if c.ctrl { UiCmd::AiInsert } else { UiCmd::AiSubmit }))
+                        }
                         _ => self.pending.push(Pending::Key { key: c.key, mods }),
                     },
                 }
@@ -4274,6 +4334,7 @@ impl eframe::App for NovaApp {
         let in_palette = self.palette.is_some();
         let in_history = self.history_popup.is_some();
         let in_rename = self.rename.is_some();
+        let in_ai = self.ai.is_some() && !in_palette;
         let modal = self.confirm.is_some();
 
         let mut kept = Vec::with_capacity(raw.events.len());
@@ -4372,6 +4433,20 @@ impl eframe::App for NovaApp {
                         };
                         if let Some(cmd) = cmd {
                             self.pending.push(Pending::Ui(cmd));
+                            continue;
+                        }
+                    }
+                    if in_ai {
+                        let in_ai_field = focused == Some(ai_input_id()) && text_focus;
+                        let cmd = match key {
+                            Key::Escape => Some(UiCmd::AiEscape),
+                            Key::Enter if kmods.ctrl || kmods.command => Some(UiCmd::AiInsert),
+                            Key::Enter if in_ai_field || !text_focus => Some(UiCmd::AiSubmit),
+                            _ => None,
+                        };
+                        if let Some(cmd) = cmd {
+                            self.pending.push(Pending::Ui(cmd));
+                            swallow_text = true;
                             continue;
                         }
                     }
@@ -4541,6 +4616,7 @@ impl eframe::App for NovaApp {
                 p.dirty = true;
             }
         }
+        self.ai_poll();
         if let Some(rx) = &self.explain_rx {
             if let Ok(ex) = rx.try_recv() {
                 self.explanation = Some(ex);
@@ -4678,6 +4754,7 @@ impl eframe::App for NovaApp {
         self.render_palette(ctx);
         self.render_tips(ctx);
         self.render_explain(ctx);
+        self.render_ai(ctx);
         self.render_save_profile(ctx);
         if self.theme_import.is_some() {
             if let Some(path) = settings::show_file_picker(ctx, &mut self.theme_import, t("Importer un thème"), settings::is_theme_file) {

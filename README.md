@@ -80,6 +80,11 @@ Fautes de frappe corrigées (`gti` → `git`), astuces sur les erreurs courantes
 (port occupé, module manquant…), et « Expliquer la commande » hors ligne
 (<kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>X</kbd>, pages man et tldr).
 
+**💬 Assistant IA, optionnel**
+Désactivé par défaut. Modèle local (Ollama) ou votre clé (OpenAI, Claude, Gemini,
+Mistral, Groq, OpenRouter…) : expliquer une erreur, résumer une sortie, trouver
+la bonne commande. Secrets masqués, rien n'est jamais exécuté à votre place.
+
 **🔄 Mises à jour automatiques**
 Nouvelle version signalée dans un bandeau ; l'AppImage se met à jour en un clic.
 
@@ -183,6 +188,39 @@ d'une installation à l'AppImage sans rien perdre) :
 
 L'intégration shell ne modifie jamais `~/.zshrc` ni `~/.bashrc` : rien à y nettoyer.
 
+## 💬 Assistant IA (optionnel)
+
+<img src="docs/images/ai-assistant.png" alt="Assistant IA expliquant une erreur" width="640">
+
+L'assistant est **désactivé par défaut** : sans votre accord, NovaTerm n'envoie rien à
+aucune IA, et les aides de base (fautes de frappe, astuces, explications) restent
+100 % locales. Pour l'activer : Paramètres → **Assistant IA**.
+
+| Raccourci | Action |
+|---|---|
+| <kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>A</kbd> | Poser une question, décrire la commande voulue (« trouver les fichiers de plus de 100 Mo ») |
+| <kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>I</kbd> | Expliquer l'erreur de la dernière commande, ou résumer sa sortie |
+| ✨ au survol d'une commande | Même chose pour n'importe quelle commande du terminal |
+| Palette | Expliquer une commande · Message de commit (à partir de `git diff --staged`) |
+| <kbd>Ctrl</kbd>+<kbd>Entrée</kbd> | Insérer la commande proposée (sans l'exécuter) |
+
+**Services** : [Ollama](https://ollama.com) en local (rien ne quitte la machine), ou
+OpenAI, Anthropic (Claude), Google Gemini, Mistral, Groq, OpenRouter et tout serveur
+compatible OpenAI (LM Studio, llama.cpp, vLLM…) avec **votre propre clé**.
+« Lister les modèles » et « Tester la connexion » aident au réglage.
+
+**Confidentialité** :
+- rien n'est envoyé sans une action de votre part ; la sortie ou le diff capturés
+  sont **montrés avant l'envoi** (désactivable) ;
+- mots de passe, jetons, clés d'API, clés privées et identifiants dans les URL sont
+  **masqués** avant l'envoi ;
+- seules les dernières lignes de la commande concernée partent (120 par défaut) ;
+- la clé est rangée dans `ai-keys.toml` (lisible par vous seul) ou lue dans une
+  variable d'environnement (`OPENAI_API_KEY`, `ANTHROPIC_API_KEY`…), jamais dans
+  `config.toml`, et transmise à `curl` hors de la ligne de commande ;
+- les commandes proposées ne sont **jamais exécutées** : « Insérer » les place sur
+  la ligne, vous vérifiez puis validez avec Entrée.
+
 ## ⌨️ Raccourcis essentiels
 
 | Raccourci | Action |
@@ -197,6 +235,7 @@ L'intégration shell ne modifie jamais `~/.zshrc` ni `~/.bashrc` : rien à y net
 | <kbd>Ctrl</kbd>+<kbd>↑</kbd> / <kbd>↓</kbd> | Commande précédente / suivante |
 | <kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>H</kbd> | Rechercher dans l'historique |
 | <kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>F</kbd> / <kbd>X</kbd> | Corriger / expliquer la commande |
+| <kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>A</kbd> / <kbd>I</kbd> | Assistant IA : demander / analyser la dernière commande (si activé) |
 | <kbd>Ctrl</kbd>+<kbd>Maj</kbd>+<kbd>C</kbd> / <kbd>V</kbd> | Copier / coller |
 | <kbd>Ctrl</kbd>+<kbd>C</kbd> | Interrompre le programme (toujours transmis) |
 
@@ -310,7 +349,9 @@ s'en protège par défaut :
   mémoire, fréquence) ; les fichiers d'image locaux ne sont lus que s'ils sont
   ordinaires et de taille raisonnable ;
 - le terminal rapide n'obéit qu'à un jeton secret lisible par vous seul ;
-- l'historique utilisé pour les suggestions reste sur votre machine.
+- l'historique utilisé pour les suggestions reste sur votre machine ;
+- l'assistant IA est désactivé par défaut ; activé, il masque les secrets, montre ce
+  qui part et n'exécute jamais rien.
 
 Vous avez trouvé une faille ? Merci de la signaler en privé via
 [les avis de sécurité GitHub](https://github.com/Clarco-Mada-digital/novaterm/security/advisories/new).
