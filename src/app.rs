@@ -252,6 +252,10 @@ pub struct NovaApp {
     quake_rx: Option<Receiver<()>>,
     quake_visible: bool,
     quake_placed: bool,
+    /// Moment de la dernière perte de focus (pour ignorer les pertes très brèves).
+    quake_lost_at: Option<f64>,
+    /// Moment du dernier affichage (délai de grâce).
+    quake_shown_at: f64,
     /// Message important affiché en bandeau (mode sans échec, config invalide).
     banner: Option<String>,
     frames: u64,
@@ -550,6 +554,8 @@ impl NovaApp {
             quake_rx: if start.quake { quake::listen(ctx.clone()) } else { None },
             quake_visible: true,
             quake_placed: false,
+            quake_lost_at: None,
+            quake_shown_at: 0.0,
             banner,
             frames: 0,
             guard_frames: Some(20),
@@ -946,6 +952,15 @@ impl NovaApp {
                 self.quake_placed = true;
             }
         }
+        // Suivi des pertes de focus (le bureau en provoque de très brèves).
+        let time = ctx.input(|i| i.time);
+        for e in ctx.input(|i| i.events.clone()) {
+            match e {
+                egui::Event::WindowFocused(false) => self.quake_lost_at = Some(time),
+                egui::Event::WindowFocused(true) => self.quake_lost_at = None,
+                _ => {}
+            }
+        }
         let mut toggle = false;
         if let Some(rx) = &self.quake_rx {
             while rx.try_recv().is_ok() {
@@ -953,7 +968,8 @@ impl NovaApp {
             }
         }
         if toggle {
-            let focused = ctx.input(|i| i.focused);
+            // Le raccourci global retire le focus un instant : « focus récent » = au premier plan.
+            let focused = ctx.input(|i| i.focused) || self.quake_lost_at.is_some_and(|t| time - t < 0.6);
             if self.quake_visible && focused {
                 self.quake_hide(ctx);
             } else {
@@ -962,12 +978,22 @@ impl NovaApp {
                 ctx.send_viewport_cmd(egui::ViewportCommand::Minimized(false));
                 ctx.send_viewport_cmd(egui::ViewportCommand::Focus);
                 self.quake_placed = false;
+                self.quake_shown_at = ctx.input(|i| i.time);
+                self.quake_lost_at = None;
             }
         }
         if self.config.quake_hide_on_unfocus && self.quake_visible && self.frames > 30 {
-            let lost = ctx.input(|i| i.events.iter().any(|e| matches!(e, egui::Event::WindowFocused(false))));
-            if lost && !self.settings_open && self.confirm.is_none() {
+            // Le bureau fait perdre le focus un court instant (Ctrl « montrer le pointeur »,
+            // raccourci global…) : seule une perte qui dure compte comme « clic ailleurs ».
+            let still_unfocused = !ctx.input(|i| i.focused);
+            let lasting = self.quake_lost_at.is_some_and(|t| time - t > 0.35);
+            let grace_over = time - self.quake_shown_at > 1.0;
+            if lasting && still_unfocused && grace_over && !self.settings_open && self.confirm.is_none() {
+                self.quake_lost_at = None;
                 self.quake_hide(ctx);
+            }
+            if self.quake_lost_at.is_some() {
+                ctx.request_repaint_after(Duration::from_millis(100));
             }
         }
         // Réveil régulier pour recevoir « toggle » même fenêtre masquée.
