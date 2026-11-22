@@ -39,6 +39,8 @@ const HELP: &str = "Usage : novaterm [options]
 
 Options :
   --cwd DOSSIER        ouvrir un onglet dans ce dossier
+                       (alias : --working-directory, pour les bureaux)
+  -e, --command CMD…   exécuter cette commande dans le premier onglet
   --profile NOM        ouvrir un profil de projet
   --quake              lancer le terminal rapide (fenêtre qui descend du haut)
   --toggle             afficher / masquer le terminal rapide (à lier à un raccourci)
@@ -60,7 +62,36 @@ Ctrl+Maj+T (onglet), Ctrl+Maj+E/O (split), Alt+Flèches (panneaux), Ctrl+↑/↓
 Ctrl+Alt+H (historique), Ctrl+Maj+C/V (copier/coller), Ctrl+Maj+Q (quitter).";
 
 fn arg_value(args: &[String], name: &str) -> Option<String> {
-    args.iter().position(|a| a == name).and_then(|i| args.get(i + 1)).cloned()
+    args.iter()
+        .position(|a| a == name)
+        .and_then(|i| args.get(i + 1))
+        .cloned()
+        // Forme « --option=valeur », attendue par plusieurs bureaux.
+        .or_else(|| args.iter().find_map(|a| a.strip_prefix(&format!("{name}=")).map(String::from)))
+}
+
+/// Commande à exécuter au démarrage (`-e`, `--command`, `-x`).
+///
+/// Convention des terminaux : tout ce qui suit l'option est la commande. C'est ce
+/// qu'emploient les gestionnaires de fichiers et `xdg-terminal-exec` pour « ouvrir
+/// un terminal ici » ou « exécuter dans un terminal ».
+fn startup_command(args: &[String]) -> Option<String> {
+    let i = args.iter().position(|a| matches!(a.as_str(), "-e" | "--command" | "-x"))?;
+    let rest = &args[i + 1..];
+    if rest.is_empty() {
+        return None;
+    }
+    // Un seul argument : déjà une ligne de commande complète (« -e "ls -l" »).
+    if rest.len() == 1 {
+        return Some(rest[0].clone());
+    }
+    // Plusieurs arguments : on les recolle en citant ceux qui contiennent un espace.
+    let line = rest
+        .iter()
+        .map(|a| if a.contains(' ') && !a.contains('\'') { format!("'{a}'") } else { a.clone() })
+        .collect::<Vec<_>>()
+        .join(" ");
+    Some(line)
 }
 
 fn main() -> eframe::Result<()> {
@@ -233,11 +264,53 @@ fn main() -> eframe::Result<()> {
         safe_reason,
         config_warning,
         profile: arg_value(&args, "--profile"),
-        cwd: arg_value(&args, "--cwd").map(std::path::PathBuf::from).filter(|p| p.is_dir()),
+        // `--working-directory` : nom employé par les bureaux (GNOME, Cinnamon, XFCE)
+        // quand on choisit NovaTerm comme terminal par défaut.
+        cwd: arg_value(&args, "--cwd")
+            .or_else(|| arg_value(&args, "--working-directory"))
+            .and_then(|v| platform::clean_dir_arg(&v)),
+        command: startup_command(&args),
+        // Le dossier de lancement fait qu'un « ouvrir un terminal ici » depuis un
+        // gestionnaire de fichiers ouvre bien le shell dans le dossier affiché.
+        // Le terminal rapide, lui, est persistant : son dossier ne doit pas dépendre
+        // de la façon dont il a été lancé.
+        launch_dir: (!quake_mode).then(platform::launch_cwd).flatten(),
     };
     let result = eframe::run_native("NovaTerm", options, Box::new(|cc| Ok(Box::new(NovaApp::new(cc, start)))));
     if quake_mode {
         quake::cleanup();
     }
     result
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn args(list: &[&str]) -> Vec<String> {
+        list.iter().map(|s| s.to_string()).collect()
+    }
+
+    #[test]
+    fn option_values() {
+        let a = args(&["novaterm", "--cwd", "/tmp"]);
+        assert_eq!(arg_value(&a, "--cwd").as_deref(), Some("/tmp"));
+        // Forme « --option=valeur » employée par certains bureaux.
+        let a = args(&["novaterm", "--working-directory=/tmp/x"]);
+        assert_eq!(arg_value(&a, "--working-directory").as_deref(), Some("/tmp/x"));
+        assert_eq!(arg_value(&a, "--cwd"), None);
+    }
+
+    #[test]
+    fn startup_commands() {
+        // Ligne déjà complète.
+        assert_eq!(startup_command(&args(&["novaterm", "-e", "ls -l"])).as_deref(), Some("ls -l"));
+        // Arguments séparés : recollés, ceux qui contiennent un espace sont cités.
+        assert_eq!(
+            startup_command(&args(&["novaterm", "--command", "git", "commit", "-m", "mon message"])).as_deref(),
+            Some("git commit -m 'mon message'")
+        );
+        assert_eq!(startup_command(&args(&["novaterm", "--cwd", "/tmp"])), None);
+        assert_eq!(startup_command(&args(&["novaterm", "-e"])), None);
+    }
 }

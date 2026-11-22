@@ -738,7 +738,20 @@ fn page_terminal(ui: &mut egui::Ui, config: &mut Config) {
     });
     card(ui, t("Historique"), |ui| {
         ui.add(egui::Slider::new(&mut config.scrollback, 0..=200_000).text(t("Lignes d'historique")).logarithmic(true));
-
+        // Chaque ligne conservée occupe ~40 octets par colonne, pour chaque panneau :
+        // à 200 000 lignes et 200 colonnes, cela dépasse le gigaoctet par panneau.
+        let mo = config.scrollback * 200 * 40 / (1024 * 1024);
+        if config.scrollback > 50_000 {
+            ui.label(
+                RichText::new(crate::i18n::tf(
+                    "⚠ Environ {} Mo de mémoire par panneau à cette valeur (fenêtre large).",
+                    &[&mo],
+                ))
+                .color(Color32::from_rgb(230, 180, 90)),
+            );
+        } else {
+            hint(ui, &crate::i18n::tf("Environ {} Mo de mémoire par panneau (fenêtre large).", &[&mo]));
+        }
     });
     card(ui, t("Clavier"), |ui| {
         ui.checkbox(&mut config.smart_copy, t("Ctrl+C copie s'il y a une sélection (sinon interrompt)"));

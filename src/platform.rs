@@ -35,6 +35,49 @@ pub fn which(name: &str) -> Option<PathBuf> {
     None
 }
 
+/// Nettoie un dossier reçu en argument (`--cwd`).
+///
+/// Windows coupe mal les arguments qui finissent par un antislash : l'explorateur
+/// passe `--cwd "C:\"` pour une racine, et l'antislash échappe le guillemet — le
+/// programme reçoit alors `C:\"`. On retire ces guillemets parasites avant de
+/// vérifier que le dossier existe (ce qui écarte aussi les cibles qui ne sont pas
+/// des chemins, comme `::{GUID}` du Bureau).
+pub fn clean_dir_arg(raw: &str) -> Option<PathBuf> {
+    let s = raw.trim().trim_matches('"').trim_end();
+    if s.is_empty() {
+        return None;
+    }
+    let p = PathBuf::from(s);
+    p.is_dir().then_some(p)
+}
+
+/// Dossier depuis lequel NovaTerm a été lancé, s'il a un sens pour ouvrir un shell.
+///
+/// C'est ainsi que les gestionnaires de fichiers (Nautilus, Nemo, Dolphin, Finder…)
+/// et beaucoup d'outils Windows demandent « ouvrir un terminal ici » : ils lancent
+/// le terminal **dans** le dossier, sans argument. Les lancements depuis un menu
+/// d'applications, eux, partent d'un dossier sans intérêt (`/`, `system32`, le
+/// dossier du programme) : on les écarte pour garder le dossier personnel.
+pub fn launch_cwd() -> Option<PathBuf> {
+    let cwd = std::env::current_dir().ok()?;
+    cwd.parent()?; // racine (« / », « C:\ ») : aucun intérêt
+    if dirs::home_dir().is_some_and(|h| h == cwd) {
+        return None; // déjà le repli par défaut
+    }
+    // Dossier du programme : cas du double-clic sur l'exécutable.
+    if std::env::current_exe().ok().and_then(|e| e.parent().map(Path::to_path_buf)).is_some_and(|d| d == cwd) {
+        return None;
+    }
+    if cfg!(windows) {
+        // L'explorateur lance les commandes du menu contextuel depuis system32.
+        let lower = cwd.to_string_lossy().to_ascii_lowercase();
+        if lower.ends_with("\\system32") || lower.ends_with("\\syswow64") {
+            return None;
+        }
+    }
+    Some(cwd)
+}
+
 /// Shell par défaut de l'utilisateur.
 pub fn default_shell() -> String {
     if cfg!(windows) {
@@ -310,6 +353,21 @@ pub fn desktop_prefers_dark() -> Option<bool> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn dir_argument_cleaning() {
+        let tmp = std::env::temp_dir();
+        let dir = tmp.display().to_string();
+        assert_eq!(clean_dir_arg(&dir).as_deref(), Some(tmp.as_path()));
+        // Guillemet parasite laissé par l'explorateur Windows sur un chemin
+        // terminé par un antislash.
+        assert_eq!(clean_dir_arg(&format!("\"{dir}\"")).as_deref(), Some(tmp.as_path()));
+        assert_eq!(clean_dir_arg(""), None);
+        assert_eq!(clean_dir_arg("   "), None);
+        // Cible du menu contextuel qui n'est pas un chemin (Bureau, Ce PC…).
+        assert_eq!(clean_dir_arg("::{20D04FE0-3AEA-1069-A2D8-08002B30309D}"), None);
+        assert_eq!(clean_dir_arg("/dossier/qui/n/existe/pas"), None);
+    }
 
     #[test]
     fn split() {

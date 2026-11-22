@@ -88,9 +88,17 @@ impl PaneOpts {
 /// Mémoire maximale des images d'un panneau (en pixels, ≈ 256 Mo).
 const MAX_PANE_IMAGE_PIXELS: usize = 64 * 1024 * 1024;
 
+/// Résultat d'un décodage d'image en arrière-plan : identifiant du placement et
+/// image obtenue (`None` si le fichier s'est révélé illisible).
+type DecodedImage = (u32, Option<Arc<egui::ColorImage>>);
+
 /// Image affichée dans le terminal.
 pub struct InlineImage {
-    pub image: Arc<egui::ColorImage>,
+    /// `None` tant que le décodage en arrière-plan n'a pas rendu son résultat :
+    /// la place est déjà réservée, l'emplacement s'affiche en attendant.
+    pub image: Option<Arc<egui::ColorImage>>,
+    /// Dimensions en pixels, connues dès l'en-tête.
+    pub size: [usize; 2],
     pub cols: usize,
     pub rows: usize,
     pub texture: Option<egui::TextureHandle>,
@@ -105,6 +113,8 @@ pub struct Pane {
     rx: Receiver<Msg>,
     /// Tampons de lecture renvoyés au fil du PTY pour être réutilisés.
     recycle: Sender<Vec<u8>>,
+    /// Images décodées en arrière-plan : (identifiant, image ou échec).
+    decoded: (Sender<DecodedImage>, Receiver<DecodedImage>),
     ctx: egui::Context,
     pub title: String,
     pub exited: bool,
@@ -263,6 +273,7 @@ impl Pane {
             master: pair.master,
             rx,
             recycle: recycle_tx,
+            decoded: mpsc::channel(),
             ctx,
             title: "shell".to_string(),
             exited: false,
@@ -350,6 +361,24 @@ impl Pane {
         }
         if budget == 0 {
             self.ctx.request_repaint();
+        }
+        // Images dont le décodage en arrière-plan vient de se terminer.
+        while let Ok((id, image)) = self.decoded.1.try_recv() {
+            match image {
+                Some(img) => {
+                    if let Some(slot) = self.images.get_mut(&id) {
+                        slot.size = img.size;
+                        slot.image = Some(img);
+                        slot.texture = None;
+                    }
+                }
+                // Image illisible : on libère la place réservée.
+                None => {
+                    self.images.remove(&id);
+                }
+            }
+            self.dirty = true;
+            changed = true;
         }
         if changed {
             self.refresh_cmdline_from_grid();
@@ -471,15 +500,28 @@ impl Pane {
         }
         // Une commande très longue occupe plusieurs lignes repliées : au-delà, c'est
         // forcément de la sortie de programme et non une saisie.
-        if (cur.line - start).0 > 20 {
-            return None;
-        }
+        const MAX_ROWS: i32 = 20;
+        let wrapped = |l: Line| grid[l][Column(cols.saturating_sub(1))].flags.contains(Flags::WRAPLINE);
+        // Dernière ligne de la saisie. Pendant la frappe, c'est celle du curseur.
+        // Pour la commande *lancée*, le curseur est déjà passé à la ligne suivante
+        // (le retour chariot a été renvoyé) : on suit alors les lignes repliées.
+        let last = if to_cursor {
+            if (cur.line - start).0 > MAX_ROWS {
+                return None;
+            }
+            cur.line
+        } else {
+            let mut l = start;
+            while l < grid.bottommost_line() && (l - start).0 < MAX_ROWS && wrapped(l) {
+                l += 1;
+            }
+            l
+        };
         let mut rows = Vec::new();
         let mut line = start;
-        while line <= cur.line {
+        while line <= last {
             let chars: Vec<char> = (0..cols).map(|c| grid[line][Column(c)].c).collect();
-            let wrapped = grid[line][Column(cols.saturating_sub(1))].flags.contains(Flags::WRAPLINE);
-            rows.push((chars, wrapped));
+            rows.push((chars, wrapped(line)));
             line += 1;
         }
         rebuild_line(&rows, prompt_col, cur.column.0.min(cols), to_cursor)
@@ -593,10 +635,26 @@ impl Pane {
         self.next_mark += 1;
         let cur = self.term.grid().cursor.point;
         self.mark(cur.line, cur.column.0, MarkKind::Image, id);
-        self.images.insert(id, InlineImage { image: p.image, cols, rows, texture: None });
+        let size = p.source.size();
+        let image = match p.source {
+            images::Source::Ready(img) => Some(img),
+            // Décodage long : il se fait à côté, l'interface ne se fige pas.
+            images::Source::Deferred { bytes, .. } => {
+                let tx = self.decoded.0.clone();
+                let ctx = self.ctx.clone();
+                thread::spawn(move || {
+                    let image = images::decode_bytes(&bytes).ok().map(|d| d.image);
+                    if tx.send((id, image)).is_ok() {
+                        ctx.request_repaint();
+                    }
+                });
+                None
+            }
+        };
+        self.images.insert(id, InlineImage { image, size, cols, rows, texture: None });
         self.image_order.push_back(id);
         // Plafonds : nombre d'images et mémoire totale (les plus anciennes partent).
-        let pixels = |imgs: &HashMap<u32, InlineImage>| imgs.values().map(|i| i.image.size[0] * i.image.size[1]).sum::<usize>();
+        let pixels = |imgs: &HashMap<u32, InlineImage>| imgs.values().map(|i| i.size[0] * i.size[1]).sum::<usize>();
         while self.image_order.len() > 100 || (self.image_order.len() > 1 && pixels(&self.images) > MAX_PANE_IMAGE_PIXELS) {
             if let Some(old) = self.image_order.pop_front() {
                 self.images.remove(&old);
@@ -1042,6 +1100,15 @@ mod tests {
         // La première est pleine et marquée « repliée », le curseur est sur la seconde.
         let g = rows(&[("> cargo buil", true), ("d --release", false)], 12);
         assert_eq!(rebuild_line(&g, 2, 11, true), Some((21, "cargo build --release".to_string())));
+    }
+
+    /// Au moment où le shell signale « commande lancée » (OSC 133;C), le curseur est
+    /// déjà sur la ligne suivante : la commande doit malgré tout être relue.
+    #[test]
+    fn executed_command_read_after_newline() {
+        let g = rows(&[("bash> echo bonjour", false)], 40);
+        // `to_cursor = false` : on lit la ligne entière, curseur ignoré.
+        assert_eq!(rebuild_line(&g, 6, 0, false), Some((12, "echo bonjour".to_string())));
     }
 
     #[test]

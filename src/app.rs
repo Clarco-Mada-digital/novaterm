@@ -65,8 +65,14 @@ pub struct StartOptions {
     pub safe_reason: Option<String>,
     pub config_warning: Option<String>,
     pub profile: Option<String>,
-    /// Dossier demandé (« Ouvrir NovaTerm ici »).
+    /// Dossier demandé explicitement par `--cwd` (« Ouvrir NovaTerm ici ») : il ouvre
+    /// un onglet unique, sans restaurer la session précédente.
     pub cwd: Option<PathBuf>,
+    /// Dossier depuis lequel NovaTerm a été lancé. Sert seulement de dossier de
+    /// départ par défaut : la session et le profil d'ouverture sont préservés.
+    pub launch_dir: Option<PathBuf>,
+    /// Commande à lancer dans le premier onglet (`-e`, `--command`).
+    pub command: Option<String>,
 }
 
 /// Contenu de la palette.
@@ -153,6 +159,9 @@ enum ConfirmKind {
     CloseTab(usize),
     ClosePane(u64),
     Paste(String),
+    /// Snippet « exécuter aussitôt » dont le texte vient du presse-papiers ou de
+    /// la sélection : le contenu n'est pas forcément celui que l'on croit.
+    RunSnippet(u64, String),
 }
 
 struct Confirm {
@@ -206,6 +215,8 @@ fn rename_input_id() -> Id {
 pub struct NovaApp {
     ctx: egui::Context,
     config: Config,
+    /// Dossier de lancement, dossier de départ par défaut faute de panneau actif.
+    launch_dir: Option<PathBuf>,
     theme: Theme,
     bindings: Bindings,
     bindings_src: BTreeMap<String, Vec<String>>,
@@ -608,14 +619,20 @@ impl NovaApp {
                 Some(rx)
             },
             config,
+            launch_dir: start.launch_dir.clone(),
         };
         // Démarrage : profil demandé, sinon session précédente, sinon un onglet vide.
         let profile = start.profile.clone().or_else(|| (!app.config.startup_profile.is_empty()).then(|| app.config.startup_profile.clone()));
         let mut opened = false;
-        if let Some(dir) = start.cwd.clone() {
-            if let Some(id) = app.spawn_pane(Some(dir)) {
+        // `--cwd` (ou `-e`) : un onglet dédié, sans restaurer la session précédente.
+        if start.cwd.is_some() || start.command.is_some() {
+            let dir = start.cwd.clone().or_else(|| start.launch_dir.clone());
+            if let Some(id) = app.spawn_pane(dir) {
                 app.tabs.push(Tab::new(id));
                 opened = true;
+                if let (Some(cmd), Some(pane)) = (start.command.as_ref(), app.panes.get_mut(&id)) {
+                    pane.write_input(format!("{cmd}\r").as_bytes());
+                }
             }
         }
         if !app.quake && !opened {
@@ -1030,7 +1047,13 @@ impl NovaApp {
 
     fn start_cwd(&self) -> Option<PathBuf> {
         match self.config.start_dir {
-            StartDir::Inherit => self.focused_id().and_then(|id| self.panes.get(&id)).and_then(|p| p.cwd()),
+            StartDir::Inherit => self
+                .focused_id()
+                .and_then(|id| self.panes.get(&id))
+                .and_then(|p| p.cwd())
+                // Au tout premier onglet il n'y a pas de panneau à hériter : on prend
+                // le dossier d'où NovaTerm a été lancé.
+                .or_else(|| self.launch_dir.clone()),
             StartDir::Home => dirs::home_dir(),
             StartDir::Custom => {
                 let s = self.config.custom_start_dir.trim();
@@ -1170,6 +1193,16 @@ impl NovaApp {
         ids.iter().filter_map(|id| self.panes.get(id)).filter_map(|p| p.foreground_process()).collect()
     }
 
+    /// Texte d'une commande à montrer dans un dialogue : une seule ligne, tronquée.
+    fn one_line(text: &str, max: usize) -> String {
+        let flat: String = text.chars().map(|c| if c.is_control() { ' ' } else { c }).collect();
+        let flat = flat.split_whitespace().collect::<Vec<_>>().join(" ");
+        match flat.char_indices().nth(max) {
+            Some((i, _)) => format!("{}…", &flat[..i]),
+            None => flat,
+        }
+    }
+
     fn ask_confirm(&mut self, kind: ConfirmKind, busy: Vec<String>) {
         let list = busy.join(", ");
         let (title, message, button) = match &kind {
@@ -1192,6 +1225,11 @@ impl NovaApp {
                 "Coller plusieurs lignes ?",
                 crate::i18n::tf("Le texte contient {} lignes : chaque ligne peut être exécutée comme une commande.", &[&text.lines().count()]),
                 "Coller",
+            ),
+            ConfirmKind::RunSnippet(_, cmd) => (
+                "Exécuter ce raccourci ?",
+                crate::i18n::tf("Il contient du texte venu du presse-papiers ou de la sélection :\n\n{}", &[&Self::one_line(cmd, 200)]),
+                t("Exécuter"),
             ),
         };
         self.confirm = Some(Confirm { kind, title: title.into(), message, button: button.into() });
@@ -1246,6 +1284,7 @@ impl NovaApp {
             ConfirmKind::CloseTab(i) => self.close_tab_now(i),
             ConfirmKind::ClosePane(id) => self.remove_pane(id),
             ConfirmKind::Paste(text) => self.paste_text(&text),
+            ConfirmKind::RunSnippet(id, cmd) => self.insert_command(id, &cmd, true),
         }
     }
 
@@ -2786,7 +2825,14 @@ impl NovaApp {
             let cwd = self.panes.get(&id).and_then(|p| p.cwd()).map(|p| p.display().to_string()).unwrap_or_default();
             cmd = cmd.replace("{cwd}", &cwd);
         }
-        self.insert_command(id, &cmd, sn.run);
+        // Exécuter sans relire un texte venu du presse-papiers reviendrait à lancer
+        // ce que le dernier copier-coller y a laissé : on montre la commande d'abord.
+        let from_clipboard = sn.run && (sn.command.contains("{clipboard}") || sn.command.contains("{selection}"));
+        if from_clipboard {
+            self.ask_confirm(ConfirmKind::RunSnippet(id, cmd), Vec::new());
+        } else {
+            self.insert_command(id, &cmd, sn.run);
+        }
     }
 
     // ------------------------------------------------------------------
@@ -3504,17 +3550,23 @@ impl NovaApp {
                     let clip = painter.with_clip_rect(pr.intersect(painter.clip_rect()));
                     for (row, col, iid) in pane.vis_images.clone() {
                         let Some(img) = pane.images.get_mut(&iid) else { continue };
-                        let tex = img.texture.get_or_insert_with(|| {
-                            self.ctx.load_texture(format!("nova_img_{id}_{iid}"), (*img.image).clone(), TextureOptions::LINEAR)
-                        });
                         let r = Rect::from_min_size(
                             Pos2::new(origin.x + col as f32 * self.metrics.cell_w, origin.y + row as f32 * self.metrics.cell_h),
                             Vec2::new(img.cols as f32 * self.metrics.cell_w, img.rows as f32 * self.metrics.cell_h),
                         );
                         // Conserver les proportions dans la zone réservée.
-                        let isz = Vec2::new(img.image.size[0] as f32, img.image.size[1] as f32);
+                        let isz = Vec2::new(img.size[0] as f32, img.size[1] as f32);
                         let scale = (r.width() / isz.x).min(r.height() / isz.y);
                         let draw = Rect::from_min_size(r.min, isz * scale);
+                        let Some(image) = img.image.clone() else {
+                            // Décodage en cours : la place est réservée, on la marque
+                            // discrètement plutôt que de laisser un trou.
+                            clip.rect_filled(draw, 2.0, rgb(self.theme.foreground).gamma_multiply(0.06));
+                            continue;
+                        };
+                        let tex = img.texture.get_or_insert_with(|| {
+                            self.ctx.load_texture(format!("nova_img_{id}_{iid}"), (*image).clone(), TextureOptions::LINEAR)
+                        });
                         clip.image(tex.id(), draw, Rect::from_min_max(Pos2::ZERO, Pos2::new(1.0, 1.0)), Color32::WHITE);
                     }
                 }

@@ -293,8 +293,11 @@ mod tests {
         let iterm = tmp("i.itermcolors", "<plist><dict><key>Ansi 1 Color</key><dict><key>Blue Component</key><real>0</real><key>Green Component</key><real>0</real><key>Red Component</key><real>1</real></dict><key>Background Color</key><dict><key>Blue Component</key><real>0.1</real><key>Green Component</key><real>0.1</real><key>Red Component</key><real>0.1</real></dict></dict></plist>");
         let t = import_file(&iterm).unwrap();
         assert_eq!((t.ansi[1], t.background), ([255, 0, 0], [26, 26, 26]));
-        assert!(import_file(&tmp("e.txt", "hello")).is_err());
-        for p in [alacritty, kitty, wt, iterm] {
+        // Nommé, pour être effacé comme les autres : sinon chaque exécution des
+        // tests laissait un fichier dans le dossier temporaire.
+        let autre = tmp("e.txt", "hello");
+        assert!(import_file(&autre).is_err());
+        for p in [alacritty, kitty, wt, iterm, autre] {
             let _ = std::fs::remove_file(p);
         }
     }

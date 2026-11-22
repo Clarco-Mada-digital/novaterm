@@ -19,16 +19,23 @@ fn port_file() -> Option<PathBuf> {
 
 /// Jeton aléatoire : seul un processus capable de lire le fichier (même utilisateur)
 /// peut piloter le terminal rapide.
+///
+/// Tiré du générateur du système (`getrandom`) et non d'un mélange horloge + PID,
+/// qu'un autre processus local pourrait reconstituer.
 fn new_token() -> String {
-    use std::hash::{BuildHasher, Hasher};
-    let mut out = String::new();
-    for i in 0..2u64 {
+    let mut bytes = [0u8; 16];
+    if getrandom::fill(&mut bytes).is_err() {
+        // Repli : mieux vaut un jeton faible qu'un terminal rapide inutilisable.
+        use std::hash::{BuildHasher, Hasher};
         let mut h = std::collections::hash_map::RandomState::new().build_hasher();
-        h.write_u64(i ^ std::process::id() as u64);
+        h.write_u64(std::process::id() as u64);
         h.write_u128(std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_nanos()).unwrap_or(0));
-        out.push_str(&format!("{:016x}", h.finish()));
+        let v = h.finish().to_le_bytes();
+        for (i, b) in bytes.iter_mut().enumerate() {
+            *b = v[i % v.len()];
+        }
     }
-    out
+    bytes.iter().map(|b| format!("{b:02x}")).collect()
 }
 
 fn write_private(path: &std::path::Path, content: &str) -> std::io::Result<()> {

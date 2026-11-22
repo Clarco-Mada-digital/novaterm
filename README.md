@@ -423,6 +423,31 @@ docs/images/      captures du README
 
 </details>
 
+## 🖱 Ouvrir un terminal dans un dossier
+
+NovaTerm démarre dans le dossier d'où il est lancé. Trois façons de le lui dire :
+
+| Méthode | Comment |
+|---|---|
+| Clic droit sur un dossier | Windows : tâche « Ouvrir NovaTerm ici » de l'installateur. |
+| Dossier de lancement | Aucun argument : le shell s'ouvre dans le dossier courant du processus — c'est ce qu'utilisent les gestionnaires de fichiers. |
+| En ligne de commande | `novaterm --cwd /chemin` (alias `--working-directory`), `novaterm -e "make test"`. |
+
+Pour désigner NovaTerm comme terminal par défaut sous Cinnamon ou GNOME :
+
+```bash
+gsettings set org.cinnamon.desktop.default-applications.terminal exec novaterm
+gsettings set org.cinnamon.desktop.default-applications.terminal exec-arg -e
+```
+
+> [!NOTE]
+> Sous Windows 11, le réglage « Application de terminal par défaut » repose sur le
+> protocole de transfert ConPTY (`DelegationConsole`) que NovaTerm n'implémente pas
+> encore : l'entrée « Ouvrir dans le Terminal » de l'explorateur reste celle de
+> Windows Terminal. Le clic droit « Ouvrir NovaTerm ici » fonctionne, lui.
+> Le plan de mise en œuvre est décrit dans
+> [docs/windows-terminal-par-defaut.md](docs/windows-terminal-par-defaut.md).
+
 ## 🚀 Versions et publication
 
 NovaTerm suit le [versionnage sémantique](https://semver.org/lang/fr/) :
@@ -462,6 +487,9 @@ Release est publiée sans toucher au tag (ou `gh workflow run release.yml -f tag
 - [ ] Intégration fish et nu aux petits oignons
 - [ ] Décodage des images hors du fil de l'interface (grandes images)
 - [ ] Notifications Windows avec icône NovaTerm (identifiant d'application enregistré)
+- [ ] Terminal par défaut de Windows 11 ([transfert ConPTY](docs/windows-terminal-par-defaut.md))
+- [ ] Mises à jour signées (la somme SHA-256 vient de la même source que le fichier)
+- [ ] Clés d'API dans le trousseau du système plutôt qu'en clair
 - [ ] Rendu GPU dédié et ligatures
 - [ ] Recherche dans la sortie d'un bloc, repli des longues sorties
 - [ ] Synchronisation des réglages et snippets entre machines

@@ -136,9 +136,53 @@ pub fn decode_bytes(bytes: &[u8]) -> Result<Decoded, String> {
     Ok(Decoded { image: Arc::new(egui::ColorImage::from_rgba_unmultiplied(size, rgba.as_raw())) })
 }
 
+/// Au-delà de cette taille, l'image est décodée en arrière-plan : décoder un gros
+/// JPEG sur le fil de l'interface fige l'affichage le temps du calcul. En deçà, le
+/// décodage immédiat reste préférable (quelques millisecondes, aucun scintillement).
+pub const DEFER_DECODE_BYTES: usize = 512 * 1024;
+
+/// Image d'un placement : déjà décodée, ou à décoder en arrière-plan.
+pub enum Source {
+    Ready(Arc<egui::ColorImage>),
+    /// Octets d'origine et dimensions lues dans l'en-tête (quelques octets).
+    Deferred { bytes: Arc<Vec<u8>>, size: [usize; 2] },
+}
+
+impl Source {
+    /// Dimensions en pixels, connues avant le décodage complet.
+    pub fn size(&self) -> [usize; 2] {
+        match self {
+            Source::Ready(img) => img.size,
+            Source::Deferred { size, .. } => *size,
+        }
+    }
+}
+
+/// Dimensions d'une image sans la décoder (lecture de l'en-tête seul).
+/// `None` pour les formats dont la taille n'est pas lisible ainsi (SVG) : on
+/// retombe alors sur le décodage immédiat.
+pub fn probe_size(bytes: &[u8]) -> Option<[usize; 2]> {
+    if looks_like_svg(bytes) {
+        return None;
+    }
+    let reader = image::ImageReader::new(std::io::Cursor::new(bytes)).with_guessed_format().ok()?;
+    let (w, h) = reader.into_dimensions().ok()?;
+    // Comme au décodage, les très grandes images seront réduites : la zone
+    // réservée doit correspondre à ce qui sera réellement affiché.
+    let (w, h) = (w as usize, h as usize);
+    if w == 0 || h == 0 {
+        return None;
+    }
+    if w > 4096 || h > 4096 {
+        let s = 4096.0 / w.max(h) as f64;
+        return Some([((w as f64 * s) as usize).max(1), ((h as f64 * s) as usize).max(1)]);
+    }
+    Some([w, h])
+}
+
 /// Requête d'affichage, calculée en cellules par le panneau.
 pub struct Placement {
-    pub image: Arc<egui::ColorImage>,
+    pub source: Source,
     pub width: Dim,
     pub height: Dim,
     pub keep_ratio: bool,
@@ -150,7 +194,8 @@ pub struct Placement {
 
 /// Calcule la taille en cellules (colonnes, lignes) d'une image.
 pub fn cells_for(p: &Placement, cell_w: f32, cell_h: f32, max_cols: usize, max_rows: usize) -> (usize, usize) {
-    let (iw, ih) = (p.image.size[0] as f32, p.image.size[1] as f32);
+    let size = p.source.size();
+    let (iw, ih) = (size[0] as f32, size[1] as f32);
     let to_px = |d: Dim, cell: f32, max_cells: usize| -> Option<f32> {
         match d {
             Dim::Auto => None,
@@ -206,8 +251,15 @@ pub fn parse_iterm(body: &[u8]) -> Result<Option<Placement>, String> {
     let bytes = base64::engine::general_purpose::STANDARD
         .decode(data.trim().as_bytes())
         .map_err(|e| format!("base64 invalide : {e}"))?;
+    let place = |source| Placement { source, width, height, keep_ratio, keep_cursor: false, iterm_cursor: true };
+    // Grosse image : on réserve la place d'après l'en-tête et on décode à côté.
+    if bytes.len() >= DEFER_DECODE_BYTES {
+        if let Some(size) = probe_size(&bytes) {
+            return Ok(Some(place(Source::Deferred { bytes: Arc::new(bytes), size })));
+        }
+    }
     let d = decode_bytes(&bytes)?;
-    Ok(Some(Placement { image: d.image, width, height, keep_ratio, keep_cursor: false, iterm_cursor: true }))
+    Ok(Some(place(Source::Ready(d.image))))
 }
 
 /// État du protocole Kitty pour un panneau (transferts en plusieurs morceaux,
@@ -310,7 +362,7 @@ impl KittyState {
     fn placement(&self, keys: &HashMap<String, String>, image: Arc<egui::ColorImage>) -> Placement {
         let num = |k: &str| keys.get(k).and_then(|v| v.parse::<u32>().ok());
         Placement {
-            image,
+            source: Source::Ready(image),
             width: num("c").map(Dim::Cells).unwrap_or(Dim::Auto),
             height: num("r").map(Dim::Cells).unwrap_or(Dim::Auto),
             keep_ratio: !(num("c").is_some() && num("r").is_some()),
@@ -395,7 +447,7 @@ mod tests {
         let seq = iterm_sequence(&png_1x1(), "a.png", Some("10"));
         let body = seq.trim_start_matches("\x1b]1337;").trim_end_matches("\x07\n");
         let p = parse_iterm(body.as_bytes()).unwrap().unwrap();
-        assert_eq!(p.image.size, [4, 2]);
+        assert_eq!(p.source.size(), [4, 2]);
         assert_eq!(p.width, Dim::Cells(10));
         assert_eq!(cells_for(&p, 8.0, 16.0, 80, 24), (10, 3));
     }
@@ -408,17 +460,67 @@ mod tests {
         let r = k.handle(format!("a=T,f=100,i=5,m=1;{a}").as_bytes(), false);
         assert!(r.place.is_none());
         let r = k.handle(format!("m=0;{b}").as_bytes(), false);
-        assert_eq!(r.place.unwrap().image.size, [4, 2]);
+        assert_eq!(r.place.unwrap().source.size(), [4, 2]);
         assert_eq!(r.reply.as_deref(), Some("\x1b_Gi=5;OK\x1b\\"));
         // Réaffichage par identifiant.
         assert!(k.handle(b"a=p,i=5", false).place.is_some());
         // RGB brut 1×1.
         let raw = base64::engine::general_purpose::STANDARD.encode([1u8, 2, 3]);
         let r = k.handle(format!("a=T,f=24,s=1,v=1,q=2;{raw}").as_bytes(), false);
-        assert_eq!(r.place.unwrap().image.size, [1, 1]);
+        assert_eq!(r.place.unwrap().source.size(), [1, 1]);
         // Requête de support.
         let q = k.handle(format!("a=q,i=31,s=1,v=1,f=24;{raw}").as_bytes(), false);
         assert_eq!(q.reply.as_deref(), Some("\x1b_Gi=31;OK\x1b\\"));
+    }
+
+    /// Une grosse image réserve sa place d'après l'en-tête, sans être décodée ;
+    /// une petite garde le décodage immédiat.
+    #[test]
+    fn large_images_are_deferred() {
+        let mut buf = Vec::new();
+        // 1200 × 900 de bruit : le PNG compressé dépasse le seuil.
+        let mut img = image::RgbaImage::new(1200, 900);
+        for (x, y, p) in img.enumerate_pixels_mut() {
+            *p = image::Rgba([(x * 7 % 251) as u8, (y * 13 % 241) as u8, ((x ^ y) % 239) as u8, 255]);
+        }
+        img.write_to(&mut std::io::Cursor::new(&mut buf), image::ImageFormat::Png).unwrap();
+        assert!(buf.len() >= DEFER_DECODE_BYTES, "image de test trop petite : {}", buf.len());
+        assert_eq!(probe_size(&buf), Some([1200, 900]));
+
+        let seq = iterm_sequence(&buf, "grand.png", None);
+        let body = seq.trim_start_matches("\x1b]1337;").trim_end_matches("\x07\n");
+        let p = parse_iterm(body.as_bytes()).unwrap().unwrap();
+        assert!(matches!(p.source, Source::Deferred { .. }), "le décodage aurait dû être différé");
+        // La taille est connue avant décodage : la place réservée est la bonne.
+        assert_eq!(p.source.size(), [1200, 900]);
+
+        // Petite image : inchangé, décodée tout de suite.
+        let seq = iterm_sequence(&png_1x1(), "petit.png", None);
+        let body = seq.trim_start_matches("\x1b]1337;").trim_end_matches("\x07\n");
+        let p = parse_iterm(body.as_bytes()).unwrap().unwrap();
+        assert!(matches!(p.source, Source::Ready(_)));
+
+        // Le décodage différé donne bien la même image.
+        let Source::Deferred { bytes, size } = parse_iterm(
+            iterm_sequence(&buf, "grand.png", None).trim_start_matches("\x1b]1337;").trim_end_matches("\x07\n").as_bytes(),
+        )
+        .unwrap()
+        .unwrap()
+        .source
+        else {
+            panic!("différé attendu")
+        };
+        assert_eq!(decode_bytes(&bytes).unwrap().image.size, size);
+    }
+
+    /// Les dimensions annoncées correspondent à l'image réduite, pas à l'originale.
+    #[test]
+    fn probe_matches_decoded_size_for_huge_images() {
+        let mut buf = Vec::new();
+        image::RgbaImage::from_pixel(5000, 2500, image::Rgba([1, 2, 3, 255]))
+            .write_to(&mut std::io::Cursor::new(&mut buf), image::ImageFormat::Png)
+            .unwrap();
+        assert_eq!(probe_size(&buf), Some(decode_bytes(&buf).unwrap().image.size));
     }
 
     #[test]
