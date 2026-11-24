@@ -548,17 +548,21 @@ fn get_clipboard() -> Option<String> {
 /// Fichier qui pourrait s'exécuter si on l'« ouvre » avec l'application par défaut.
 fn is_executable_file(path: &std::path::Path) -> bool {
     let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("").to_ascii_lowercase();
-    if matches!(ext.as_str(), "desktop" | "appimage" | "exe" | "msi" | "bat" | "cmd" | "ps1" | "vbs" | "jar" | "app" | "command" | "sh" | "run" | "bin") {
-        return true;
-    }
+    let extension_connue =
+        matches!(ext.as_str(), "desktop" | "appimage" | "exe" | "msi" | "bat" | "cmd" | "ps1" | "vbs" | "jar" | "app" | "command" | "sh" | "run" | "bin");
+    // Sous Unix, le bit exécutable compte autant que l'extension. Ailleurs, seule
+    // l'extension renseigne (la condition reste donc le résultat complet).
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
-        if let Ok(m) = std::fs::metadata(path) {
-            return m.is_file() && m.permissions().mode() & 0o111 != 0;
-        }
+        extension_connue
+            || std::fs::metadata(path).is_ok_and(|m| m.is_file() && m.permissions().mode() & 0o111 != 0)
     }
-    false
+    #[cfg(not(unix))]
+    {
+        let _ = path;
+        extension_connue
+    }
 }
 
 fn open_external(target: &str) {
