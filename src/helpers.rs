@@ -541,8 +541,15 @@ mod tests {
         let out = "fatal: The current branch dev has no upstream branch.\n    git push --set-upstream origin dev\n";
         let t = tips_for("git push", out, 128, &|_| 0);
         assert_eq!(t[0].fix.as_deref(), Some("git push --set-upstream origin dev"));
+        // L'astuce dépend du système : « chmod » n'existe pas sous Windows, qui
+        // conseille plutôt de relancer en administrateur.
         let t = tips_for("./deploy.sh", "bash: ./deploy.sh: Permission denied", 126, &|_| 0);
-        assert_eq!(t[0].fix.as_deref(), Some("chmod +x ./deploy.sh && ./deploy.sh"));
+        if cfg!(windows) {
+            assert_eq!(t[0].title, "Droits insuffisants");
+            assert_eq!(t[0].fix, None);
+        } else {
+            assert_eq!(t[0].fix.as_deref(), Some("chmod +x ./deploy.sh && ./deploy.sh"));
+        }
         assert!(tips_for("ls", "", 0, &|_| 0).is_empty());
     }
 
