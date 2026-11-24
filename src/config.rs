@@ -2,7 +2,7 @@
 
 use crate::i18n::t;
 use std::collections::BTreeMap;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 
@@ -590,6 +590,32 @@ impl Config {
         }
     }
 
+    /// Écrit la configuration dans un fichier choisi, pour l'emporter sur une autre
+    /// machine ou la partager (réglages, snippets, profils et thèmes importés).
+    ///
+    /// Les clés d'API de l'assistant ne sont **pas** dans ce fichier : elles vivent
+    /// à part, dans `ai-keys.toml`, et ne doivent pas voyager par mégarde.
+    pub fn export_to(&self, path: &Path) -> Result<(), String> {
+        let texte = toml::to_string_pretty(self).map_err(|e| e.to_string())?;
+        let entete = format!(
+            "# Configuration NovaTerm {}\n# À remettre en place depuis Paramètres → Avancé → Importer.\n# Ne contient aucune clé d'API.\n",
+            env!("CARGO_PKG_VERSION")
+        );
+        std::fs::write(path, entete + &texte).map_err(|e| e.to_string())
+    }
+
+    /// Relit une configuration exportée. Le fichier est validé avant d'être appliqué :
+    /// un fichier étranger ou abîmé ne doit pas remplacer des réglages qui marchent.
+    pub fn import_from(path: &Path) -> Result<Self, String> {
+        let texte = std::fs::read_to_string(path).map_err(|e| e.to_string())?;
+        let config: Self = toml::from_str(&texte).map_err(|e| {
+            // Première ligne de l'erreur : les suivantes sont du bruit pour l'utilisateur.
+            let court = e.to_string();
+            court.lines().next().unwrap_or("fichier illisible").to_string()
+        })?;
+        Ok(config)
+    }
+
     pub fn save(&self) {
         if let Some(p) = Self::path() {
             if let Some(parent) = p.parent() {
@@ -617,5 +643,43 @@ impl Config {
     /// Noms de tous les thèmes disponibles (prédéfinis puis importés).
     pub fn theme_names(&self) -> Vec<String> {
         theme::presets().into_iter().map(|t| t.name).chain(self.user_themes.iter().map(|t| t.name.clone())).collect()
+    }
+}
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Un aller-retour export → import doit rendre exactement les mêmes réglages.
+    #[test]
+    fn export_import_roundtrip() {
+        let dir = std::env::temp_dir().join(format!("novaterm-cfg-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("export.toml");
+
+        let mut config = Config { font_size: 17.5, theme_name: "Mon thème".into(), ..Default::default() };
+        config.snippets.push(Snippet { name: "déployer".into(), command: "make deploy".into(), run: false });
+        config.export_to(&path).unwrap();
+
+        let relu = Config::import_from(&path).unwrap();
+        assert_eq!(relu.font_size, 17.5);
+        assert_eq!(relu.theme_name, "Mon thème");
+        // Les snippets par défaut sont conservés, et le nouveau aussi.
+        assert_eq!(relu.snippets.len(), config.snippets.len());
+        assert_eq!(relu.snippets.last().unwrap().command, "make deploy");
+
+        // Les clés d'API vivent dans un autre fichier : rien ne doit fuir ici.
+        let texte = std::fs::read_to_string(&path).unwrap();
+        assert!(!texte.contains("api_key"), "le fichier exporté ne doit contenir aucune clé");
+
+        // Un fichier qui n'est pas une configuration est refusé, sans tout casser.
+        let autre = dir.join("autre.toml");
+        std::fs::write(&autre, "ceci n'est pas = du TOML valide [[[").unwrap();
+        assert!(Config::import_from(&autre).is_err());
+        // Un TOML valide mais étranger donne les réglages par défaut, sans erreur.
+        let etranger = dir.join("etranger.toml");
+        std::fs::write(&etranger, "autre_chose = 1\n").unwrap();
+        assert_eq!(Config::import_from(&etranger).unwrap().font_size, Config::default().font_size);
+
+        let _ = std::fs::remove_dir_all(dir);
     }
 }

@@ -81,7 +81,10 @@ pub struct UpdateInfo {
 
 fn curl(args: &[&str]) -> Result<Vec<u8>, String> {
     let mut cmd = Command::new(if cfg!(windows) { "curl.exe" } else { "curl" });
-    cmd.args(["-fsSL", "--max-time", "30", "-H", "User-Agent: NovaTerm-updater"]).args(args);
+    // « --proto » : le téléchargeur récupère un exécutable qui sera lancé. Une
+    // redirection ne doit pas pouvoir l'emmener ailleurs que sur le web chiffré.
+    cmd.args(["-fsSL", "--proto", "=https", "--proto-redir", "=https", "--max-time", "30", "-H", "User-Agent: NovaTerm-updater"])
+        .args(args);
     #[cfg(windows)]
     {
         use std::os::windows::process::CommandExt;

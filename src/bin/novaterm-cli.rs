@@ -44,6 +44,12 @@ fn fetch_url(url: &str) -> Result<Vec<u8>, String> {
     let out = std::process::Command::new(if cfg!(windows) { "curl.exe" } else { "curl" })
         .args([
             "-fsSL",
+            // Sans cela, une redirection pourrait emmener curl vers un autre
+            // protocole (file://, scp://…) : on s'en tient au web.
+            "--proto",
+            "=http,https",
+            "--proto-redir",
+            "=http,https",
             "--max-time",
             "30",
             "--max-filesize",

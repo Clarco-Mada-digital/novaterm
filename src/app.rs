@@ -226,6 +226,9 @@ enum ConfirmKind {
     /// Snippet « exécuter aussitôt » dont le texte vient du presse-papiers ou de
     /// la sélection : le contenu n'est pas forcément celui que l'on croit.
     RunSnippet(u64, String),
+    /// Configuration importée qui changerait le shell lancé dans les onglets.
+    /// C'est une exécution de programme : elle ne doit jamais être silencieuse.
+    ImportConfig(Box<Config>),
 }
 
 struct Confirm {
@@ -352,6 +355,8 @@ pub struct NovaApp {
     /// Dialogue « enregistrer comme profil » : nom en cours de saisie.
     save_profile: Option<(String, bool)>,
     theme_import: Option<settings::FileBrowser>,
+    /// Sélecteur ouvert pour importer une configuration complète.
+    config_import: Option<settings::FileBrowser>,
     dark_rx: Option<Receiver<Option<bool>>>,
     last_dark_poll: f64,
     system_dark: Option<bool>,
@@ -659,6 +664,7 @@ impl NovaApp {
             highlight: None,
             save_profile: None,
             theme_import: None,
+            config_import: None,
             dark_rx: None,
             last_dark_poll: -100.0,
             system_dark: None,
@@ -963,6 +969,19 @@ impl NovaApp {
             // On peut chercher dès l'ouverture, sans attraper la souris.
             focus: true,
         });
+    }
+
+    /// Écrit la configuration dans le dossier personnel, prête à être emportée.
+    fn export_config(&mut self) {
+        let Some(dir) = dirs::document_dir().or_else(dirs::home_dir) else {
+            self.toast(t("Dossier personnel introuvable"));
+            return;
+        };
+        let path = dir.join("novaterm-config.toml");
+        match self.config.export_to(&path) {
+            Ok(()) => self.toast(crate::i18n::tf("Configuration exportée : {}", &[&path.display()])),
+            Err(e) => self.toast(crate::i18n::tf("Export impossible : {}", &[&e])),
+        }
     }
 
     fn block_command(&self, pane_id: u64, block: u32) -> Option<String> {
@@ -1350,6 +1369,14 @@ impl NovaApp {
                 crate::i18n::tf("Il contient du texte venu du presse-papiers ou de la sélection :\n\n{}", &[&Self::one_line(cmd, 200)]),
                 t("Exécuter"),
             ),
+            ConfirmKind::ImportConfig(c) => (
+                "Importer cette configuration ?",
+                crate::i18n::tf(
+                    "Elle changerait le programme lancé dans chaque onglet :\n\n{}\n\nN'importez une configuration que si vous savez d'où elle vient.",
+                    &[&Self::one_line(&c.shell, 200)],
+                ),
+                t("Importer"),
+            ),
         };
         self.confirm = Some(Confirm { kind, title: title.into(), message, button: button.into() });
     }
@@ -1404,7 +1431,16 @@ impl NovaApp {
             ConfirmKind::ClosePane(id) => self.remove_pane(id),
             ConfirmKind::Paste(text) => self.paste_text(&text),
             ConfirmKind::RunSnippet(id, cmd) => self.insert_command(id, &cmd, true),
+            ConfirmKind::ImportConfig(c) => self.apply_imported_config(*c),
         }
+    }
+
+    /// Met en place une configuration importée (la boucle habituelle applique
+    /// ensuite thème, police et langue, comme pour « recharger »).
+    fn apply_imported_config(&mut self, config: Config) {
+        self.config = config;
+        self.config_dirty = true;
+        self.toast(t("Configuration importée"));
     }
 
     fn set_active(&mut self, index: usize) {
@@ -1933,6 +1969,9 @@ impl NovaApp {
             Profiles => self.open_palette(PaletteMode::Profiles),
             SaveProfile => self.save_profile = Some((String::new(), true)),
             ImportTheme => self.theme_import = Some(settings::FileBrowser::new_any()),
+            // Emporter ses réglages sur une autre machine, ou les partager.
+            ExportConfig => self.export_config(),
+            ImportConfig => self.config_import = Some(settings::FileBrowser::new_any()),
             QuickTerminal => {
                 if self.quake {
                     let ctx = self.ctx.clone();
@@ -2795,6 +2834,12 @@ impl NovaApp {
                     for i in range {
                         let (debuts, courant) = view.matches_on(i);
                         let mut job = egui::text::LayoutJob::default();
+                        // Pas de repli : une ligne logique = une ligne à l'écran.
+                        // C'est ce qui garde les colonnes d'un tableau alignées, et
+                        // surtout la hauteur de ligne constante, dont dépend le saut
+                        // vers une occurrence de recherche. Le défilement horizontal
+                        // de la fenêtre permet de lire les lignes longues.
+                        job.wrap.max_width = f32::INFINITY;
                         // Le texte brut est traité comme un unique fragment ordinaire :
                         // les deux modes partagent ainsi le même surlignage.
                         let ligne_brute;
@@ -2825,7 +2870,9 @@ impl NovaApp {
                         if job.is_empty() {
                             job.append(" ", 0.0, egui::TextFormat { font_id: mono.clone(), ..Default::default() });
                         }
-                        ui.label(job);
+                        // `Extend` : egui ne replie pas et laisse la ligne dépasser,
+                        // le défilement horizontal de la fenêtre prend le relais.
+                        ui.add(egui::Label::new(job).wrap_mode(egui::TextWrapMode::Extend).selectable(true));
                     }
                 });
             });
@@ -5182,6 +5229,20 @@ impl eframe::App for NovaApp {
                         self.config.user_themes.push(t);
                         self.config_dirty = true;
                     }
+                    Err(e) => self.toast(crate::i18n::tf("Import impossible : {}", &[&e])),
+                }
+            }
+        }
+        if self.config_import.is_some() {
+            let toml_seul = |p: &std::path::Path| p.extension().and_then(|e| e.to_str()).is_some_and(|e| e.eq_ignore_ascii_case("toml"));
+            if let Some(path) = settings::show_file_picker(ctx, &mut self.config_import, t("Importer une configuration"), toml_seul) {
+                match Config::import_from(&path) {
+                    // Un shell différent, c'est un programme différent lancé à chaque
+                    // onglet : on le montre avant d'accepter.
+                    Ok(c) if c.shell.trim() != self.config.shell.trim() && !c.shell.trim().is_empty() => {
+                        self.ask_confirm(ConfirmKind::ImportConfig(Box::new(c)), Vec::new());
+                    }
+                    Ok(c) => self.apply_imported_config(c),
                     Err(e) => self.toast(crate::i18n::tf("Import impossible : {}", &[&e])),
                 }
             }

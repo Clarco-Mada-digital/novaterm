@@ -304,7 +304,23 @@ const STATUS_MARK: &str = "__NOVATERM_HTTP__";
 
 fn spawn_curl(config: &str, stream: bool, max_time: u32) -> Result<Child, String> {
     let mut cmd = Command::new(if cfg!(windows) { "curl.exe" } else { "curl" });
-    cmd.args(["-sS", "--max-time", &max_time.to_string(), "--connect-timeout", "10", "-w", &format!("\n{STATUS_MARK}%{{http_code}}\n"), "-K", "-"]);
+    // « --proto » : l'adresse du service est modifiable dans les réglages ; elle ne
+    // doit pouvoir désigner que le web (http pour un modèle local comme Ollama).
+    cmd.args([
+        "-sS",
+        "--proto",
+        "=http,https",
+        "--proto-redir",
+        "=http,https",
+        "--max-time",
+        &max_time.to_string(),
+        "--connect-timeout",
+        "10",
+        "-w",
+        &format!("\n{STATUS_MARK}%{{http_code}}\n"),
+        "-K",
+        "-",
+    ]);
     if stream {
         cmd.arg("-N");
     }

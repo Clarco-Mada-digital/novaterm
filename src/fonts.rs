@@ -267,6 +267,9 @@ pub fn install(ctx: &egui::Context, family: &str, catalog: Option<&BTreeMap<Stri
     // Replis pour les symboles absents, dans le terminal comme dans l'interface.
     let mut proportional = fonts.families.get(&FontFamily::Proportional).cloned().unwrap_or_default();
     proportional.push("JBMono".into());
+    // Polices d'emoji fournies par egui : sans elles, remplacer la famille à chasse
+    // fixe les écarte, et un emoji s'affiche en carré vide dans le terminal.
+    let emoji: Vec<String> = fonts.font_data.keys().filter(|n| n.to_ascii_lowercase().contains("emoji")).cloned().collect();
     for (i, path) in FALLBACKS.iter().enumerate() {
         let Ok(bytes) = std::fs::read(path) else { continue };
         if validate(&bytes, 0).is_err() {
@@ -276,6 +279,13 @@ pub fn install(ctx: &egui::Context, family: &str, catalog: Option<&BTreeMap<Stri
         fonts.font_data.insert(name.clone(), Arc::new(FontData::from_owned(bytes)));
         for list in [&mut regular, &mut bold, &mut italic, &mut bold_italic, &mut proportional] {
             list.push(name.clone());
+        }
+    }
+    for nom in &emoji {
+        for list in [&mut regular, &mut bold, &mut italic, &mut bold_italic] {
+            if !list.contains(nom) {
+                list.push(nom.clone());
+            }
         }
     }
     fonts.families.insert(FontFamily::Proportional, proportional);

@@ -738,9 +738,9 @@ fn page_terminal(ui: &mut egui::Ui, config: &mut Config) {
     });
     card(ui, t("Historique"), |ui| {
         ui.add(egui::Slider::new(&mut config.scrollback, 0..=200_000).text(t("Lignes d'historique")).logarithmic(true));
-        // Chaque ligne conservée occupe ~40 octets par colonne, pour chaque panneau :
-        // à 200 000 lignes et 200 colonnes, cela dépasse le gigaoctet par panneau.
-        let mo = config.scrollback * 200 * 40 / (1024 * 1024);
+        // ~25 octets par cellule, chiffre **mesuré** sur un historique saturé
+        // (612 Mo pour 150 000 lignes de 132 colonnes, base de l'application déduite).
+        let mo = config.scrollback * 200 * 25 / (1024 * 1024);
         if config.scrollback > 50_000 {
             ui.label(
                 RichText::new(crate::i18n::tf(
@@ -1463,6 +1463,22 @@ fn page_advanced(ui: &mut egui::Ui, config: &mut Config, st: &mut SettingsUi, ou
         if ui.button(t("Recharger la configuration depuis le fichier")).clicked() {
             out.action = Some(Action::ReloadConfig);
         }
+    });
+    card(ui, t("Emporter ou partager vos réglages"), |ui| {
+        hint(
+            ui,
+            "Un seul fichier contient vos réglages, snippets, profils et thèmes importés : \
+             de quoi retrouver votre terminal sur une autre machine, ou partager votre \
+             configuration. Les clés d'API de l'assistant restent à part et ne sont jamais exportées.",
+        );
+        ui.horizontal(|ui| {
+            if ui.button(t("Exporter…")).clicked() {
+                out.action = Some(Action::ExportConfig);
+            }
+            if ui.button(t("Importer…")).on_hover_text(t("Remplace les réglages actuels")).clicked() {
+                out.action = Some(Action::ImportConfig);
+            }
+        });
     });
     if let Some(app) = crate::appimage::current() {
         card(ui, t("AppImage"), |ui| {

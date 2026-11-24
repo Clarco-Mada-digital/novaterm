@@ -539,14 +539,17 @@ Release est publiée sans toucher au tag (ou `gh workflow run release.yml -f tag
 - [ ] Terminal par défaut de Windows 11 ([transfert ConPTY](docs/windows-terminal-par-defaut.md))
 - [ ] Mises à jour signées (la somme SHA-256 vient de la même source que le fichier)
 - [ ] Clés d'API dans le trousseau du système plutôt qu'en clair
-- [ ] Rendu GPU dédié et ligatures
+- [ ] Ligatures (demande un moteur de façonnage : egui pose les glyphes un par un)
+- [ ] Moteur de rendu spécialisé (NovaTerm dessine déjà par le GPU via egui)
 - [x] Vue de la sortie d'un bloc, avec mise en forme du JSON
 - [x] Recherche dans la vue d'une sortie
-- [ ] Repli des longues sorties dans le terminal
+- [ ] Repli des longues sorties dans le terminal (chantier : 44 points de conversion
+      ligne écran ↔ ligne de grille à faire passer par une couche commune)
 - [x] Coloration de quelques langages dans la vue (Python, JS, Rust, CSS, HTML…)
 - [x] Vue markdown (titres, emphase, listes, liens, blocs de code colorés)
-- [ ] Synchronisation des réglages et snippets entre machines
-- [ ] Extensions / thèmes partagés par la communauté
+- [x] Réglages, snippets et thèmes exportables en un fichier (Paramètres → Avancé)
+- [ ] Synchronisation automatique entre machines
+- [ ] Dépôt de thèmes et d'extensions partagés par la communauté
 - [ ] Applications signées (Windows, macOS) et mise à jour automatique
 
 ## 📄 Licence

@@ -672,7 +672,111 @@ fn highlight_markdown(lines: &[&str]) -> Vec<Vec<Span>> {
         }
         out.push(markdown_line(line));
     }
+    aligner_tableaux(&mut out);
     out
+}
+
+/// Aligne les tableaux markdown en colonnes.
+///
+/// Comme l'indentation du JSON, cela n'ajoute que des espaces : le texte d'origine
+/// reste accessible dans l'autre onglet. Sans cela, un tableau de README est une
+/// bouillie de barres verticales.
+fn aligner_tableaux(lignes: &mut [Vec<Span>]) {
+    let largeur = |spans: &[Span]| spans.iter().map(|s| s.text.chars().count()).sum::<usize>();
+    let est_tableau = |spans: &[Span]| {
+        let t: String = spans.iter().map(|s| s.text.as_str()).collect();
+        let t = t.trim();
+        t.starts_with('|') && t.len() > 1
+    };
+    let mut debut = 0;
+    while debut < lignes.len() {
+        if !est_tableau(&lignes[debut]) {
+            debut += 1;
+            continue;
+        }
+        let mut fin = debut;
+        while fin < lignes.len() && est_tableau(&lignes[fin]) {
+            fin += 1;
+        }
+        // Largeur de chaque colonne sur l'ensemble du tableau.
+        let mut largeurs: Vec<usize> = Vec::new();
+        for ligne in &lignes[debut..fin] {
+            for (i, cellule) in cellules(ligne).iter().enumerate() {
+                let l = largeur(cellule);
+                match largeurs.get_mut(i) {
+                    Some(max) => *max = (*max).max(l),
+                    None => largeurs.push(l),
+                }
+            }
+        }
+        for ligne in &mut lignes[debut..fin] {
+            let cols = cellules(ligne);
+            let separateur = cols.iter().all(|c| {
+                let t: String = c.iter().map(|s| s.text.as_str()).collect();
+                !t.trim().is_empty() && t.trim().chars().all(|c| c == '-' || c == ':' || c == ' ')
+            });
+            let mut neuf = Vec::new();
+            for (i, cellule) in cols.iter().enumerate() {
+                let cible = largeurs.get(i).copied().unwrap_or(0);
+                neuf.push(Span { text: if i == 0 { "│ ".into() } else { " │ ".into() }, role: Role::Punct });
+                if separateur {
+                    neuf.push(Span { text: "─".repeat(cible), role: Role::Punct });
+                } else {
+                    neuf.extend(cellule.iter().cloned());
+                    let reste = cible.saturating_sub(largeur(cellule));
+                    if reste > 0 {
+                        neuf.push(Span { text: " ".repeat(reste), role: Role::Punct });
+                    }
+                }
+            }
+            neuf.push(Span { text: " │".into(), role: Role::Punct });
+            *ligne = neuf;
+        }
+        debut = fin;
+    }
+}
+
+/// Découpe une ligne de tableau en cellules, sans couper dans un fragment de code.
+fn cellules(ligne: &[Span]) -> Vec<Vec<Span>> {
+    let mut out: Vec<Vec<Span>> = Vec::new();
+    let mut courante: Vec<Span> = Vec::new();
+    let mut commence = false;
+    for span in ligne {
+        // Les barres ne séparent que hors code (« `a|b` » reste une seule cellule).
+        if span.role != Role::Code && span.text.contains('|') {
+            let mut morceaux = span.text.split('|').peekable();
+            while let Some(m) = morceaux.next() {
+                if !m.is_empty() {
+                    courante.push(Span { text: m.to_string(), role: span.role });
+                }
+                if morceaux.peek().is_some() {
+                    if commence {
+                        out.push(std::mem::take(&mut courante));
+                    } else {
+                        courante.clear();
+                        commence = true;
+                    }
+                }
+            }
+        } else {
+            courante.push(span.clone());
+        }
+    }
+    // Ce qui suit la dernière barre est le reste de la ligne, pas une cellule.
+    out.into_iter().map(|c| rogner(&c)).collect()
+}
+
+/// Retire les espaces en bordure d'une cellule.
+fn rogner(cellule: &[Span]) -> Vec<Span> {
+    let mut v: Vec<Span> = cellule.to_vec();
+    if let Some(p) = v.first_mut() {
+        p.text = p.text.trim_start().to_string();
+    }
+    if let Some(d) = v.last_mut() {
+        d.text = d.text.trim_end().to_string();
+    }
+    v.retain(|s| !s.text.is_empty());
+    v
 }
 
 /// Une ligne de markdown, hors bloc de code.
@@ -680,6 +784,11 @@ fn markdown_line(line: &str) -> Vec<Span> {
     let marge: String = line.chars().take_while(|c| c.is_whitespace()).collect();
     let corps = &line[marge.len()..];
     let mut spans = Vec::new();
+    // Ligne de balisage HTML pur (fréquent dans les README : <div>, <table>, <img>).
+    if corps.starts_with('<') {
+        let mut carry = Carry::None;
+        return highlight_html_line(line, &syntax(Lang::Html), &mut carry);
+    }
     if !marge.is_empty() {
         spans.push(Span { text: marge, role: Role::Punct });
     }
@@ -754,30 +863,59 @@ fn emphase(chars: &[char], i: usize) -> Option<(usize, usize, Role)> {
     None
 }
 
-/// Emphase, code et liens à l'intérieur d'une ligne.
+/// Emphase, code, images, liens et balises HTML à l'intérieur d'une ligne.
 fn markdown_inline(text: &str) -> Vec<Span> {
+    markdown_inline_depth(text, 0)
+}
+
+/// Profondeur maximale d'imbrication (« [**gras**](lien) » en demande deux).
+/// Un badge — une image dans un lien — en demande deux également.
+const MAX_INLINE_DEPTH: usize = 4;
+
+fn markdown_inline_depth(text: &str, depth: usize) -> Vec<Span> {
     let chars: Vec<char> = text.chars().collect();
     let mut spans = Vec::new();
     let mut ordinaire = String::new();
     let mut i = 0;
     // Cherche la marque fermante à partir de `from` ; None si elle manque.
-    let fermeture = |from: usize, marque: &[char]| -> Option<usize> {
-        let mut j = from;
-        while j + marque.len() <= chars.len() {
-            if chars[j..j + marque.len()] == *marque {
-                return Some(j);
+    let fermeture = |from: usize, marque: char| -> Option<usize> {
+        (from..chars.len()).find(|j| chars[*j] == marque)
+    };
+    // Fermeture **équilibrée** : indispensable pour un badge « [![alt](img)](lien) »,
+    // où le premier « ] » rencontré n'est pas celui du lien extérieur.
+    let equilibre = |from: usize, ouvre: char, ferme: char| -> Option<usize> {
+        let mut profondeur = 1usize;
+        for (j, c) in chars.iter().enumerate().skip(from) {
+            if *c == ouvre {
+                profondeur += 1;
+            } else if *c == ferme {
+                profondeur -= 1;
+                if profondeur == 0 {
+                    return Some(j);
+                }
             }
-            j += 1;
         }
         None
     };
     while i < chars.len() {
         let c = chars[i];
-        // Code entre accents graves.
+        // Code entre accents graves : son contenu n'est jamais réinterprété.
         if c == '`' {
-            if let Some(fin) = fermeture(i + 1, &['`']) {
+            if let Some(fin) = fermeture(i + 1, '`') {
                 push(&mut spans, std::mem::take(&mut ordinaire), Role::Plain);
                 push(&mut spans, chars[i + 1..fin].iter().collect(), Role::Code);
+                i = fin + 1;
+                continue;
+            }
+        }
+        // Balise HTML : colorée comme du HTML plutôt que laissée en texte brut.
+        // Les README en contiennent beaucoup (<div>, <img>, <kbd>, <table>…).
+        if c == '<' && chars.get(i + 1).is_some_and(|n| n.is_ascii_alphabetic() || *n == '/' || *n == '!') {
+            if let Some(fin) = fermeture(i + 1, '>') {
+                push(&mut spans, std::mem::take(&mut ordinaire), Role::Plain);
+                let balise: String = chars[i..=fin].iter().collect();
+                let mut carry = Carry::None;
+                spans.extend(highlight_html_line(&balise, &syntax(Lang::Html), &mut carry));
                 i = fin + 1;
                 continue;
             }
@@ -785,18 +923,41 @@ fn markdown_inline(text: &str) -> Vec<Span> {
         // Gras ou italique. Le gras se teste en premier : « ** » contient « * ».
         if let Some((fin, taille, role)) = emphase(&chars, i) {
             push(&mut spans, std::mem::take(&mut ordinaire), Role::Plain);
-            push(&mut spans, chars[i + taille..fin].iter().collect(), role);
+            let interieur: String = chars[i + taille..fin].iter().collect();
+            // Le contenu est réanalysé : « **un `code`** » garde son code.
+            for mut span in sous_analyse(&interieur, depth) {
+                // L'emphase l'emporte sur le texte ordinaire, sans écraser un rôle plus précis.
+                if span.role == Role::Plain {
+                    span.role = role;
+                }
+                push(&mut spans, span.text, span.role);
+            }
             i = fin + taille;
             continue;
         }
-        // Lien : [texte](adresse). L'adresse est conservée, elle porte l'information.
-        if c == '[' {
-            if let Some(fin_texte) = fermeture(i + 1, &[']']) {
+        // Image « ![texte](adresse) », y compris dans un lien (badge).
+        let image = c == '!' && chars.get(i + 1) == Some(&'[');
+        if image || c == '[' {
+            let ouvrante = if image { i + 1 } else { i };
+            if let Some(fin_texte) = equilibre(ouvrante + 1, '[', ']') {
                 if chars.get(fin_texte + 1) == Some(&'(') {
-                    if let Some(fin_url) = fermeture(fin_texte + 2, &[')']) {
+                    if let Some(fin_url) = equilibre(fin_texte + 2, '(', ')') {
                         push(&mut spans, std::mem::take(&mut ordinaire), Role::Plain);
-                        push(&mut spans, chars[i + 1..fin_texte].iter().collect(), Role::Link);
-                        push(&mut spans, format!(" ({})", chars[fin_texte + 2..fin_url].iter().collect::<String>()), Role::Punct);
+                        let interieur: String = chars[ouvrante + 1..fin_texte].iter().collect();
+                        let url: String = chars[fin_texte + 2..fin_url].iter().collect();
+                        if image {
+                            // L'image n'est pas affichée ici : on la signale clairement.
+                            // Marqueur en texte simple : la police à chasse fixe de la
+                            // vue n'a pas de glyphe d'emoji, qui s'afficherait en carré.
+                            push(&mut spans, "[img] ".to_string(), Role::Keyword);
+                        }
+                        for mut span in sous_analyse(&interieur, depth) {
+                            if span.role == Role::Plain {
+                                span.role = Role::Link;
+                            }
+                            push(&mut spans, span.text, span.role);
+                        }
+                        push(&mut spans, format!(" ({url})"), Role::Punct);
                         i = fin_url + 1;
                         continue;
                     }
@@ -808,6 +969,14 @@ fn markdown_inline(text: &str) -> Vec<Span> {
     }
     push(&mut spans, ordinaire, Role::Plain);
     spans
+}
+
+/// Analyse le contenu d'une emphase ou d'un lien, sans boucler indéfiniment.
+fn sous_analyse(texte: &str, depth: usize) -> Vec<Span> {
+    if depth + 1 >= MAX_INLINE_DEPTH {
+        return vec![Span { text: texte.to_string(), role: Role::Plain }];
+    }
+    markdown_inline_depth(texte, depth + 1)
 }
 
 // ------------------------------------------------------------------ recherche
@@ -1157,6 +1326,55 @@ mod tests {
         // Marque jamais fermée : le texte reste intact, rien n'est avalé.
         assert_eq!(md("deux * etoiles * ici").iter().map(|(_, t)| t.as_str()).collect::<String>(), "deux * etoiles * ici");
         assert_eq!(md("accent ` seul").iter().map(|(_, t)| t.as_str()).collect::<String>(), "accent ` seul");
+    }
+
+    /// Les cas d'un vrai README : badges, balises HTML, emphase dans un lien.
+    #[test]
+    fn markdown_handles_real_world_readme() {
+        // Emphase à l'intérieur d'un lien : plus d'astérisques visibles.
+        let r = md("[**Télécharger**](https://exemple.fr)");
+        assert_eq!(r, vec![(Role::Bold, "Télécharger".into()), (Role::Punct, " (https://exemple.fr)".into())]);
+
+        // Image : signalée comme telle, adresse conservée.
+        let r = md("![Logo](assets/logo.png)");
+        assert_eq!(r, vec![(Role::Keyword, "[img] ".into()), (Role::Link, "Logo".into()), (Role::Punct, " (assets/logo.png)".into())]);
+
+        // Badge : une image dans un lien. Les deux adresses restent lisibles.
+        let r = md("[![Version](https://img.shields.io/v.svg)](https://exemple.fr/releases)");
+        let texte: String = r.iter().map(|(_, t)| t.as_str()).collect();
+        assert!(texte.contains("[img] "), "{texte}");
+        assert!(texte.contains("Version"), "{texte}");
+        assert!(texte.contains("https://img.shields.io/v.svg"), "{texte}");
+        assert!(texte.contains("https://exemple.fr/releases"), "{texte}");
+        assert!(!texte.contains("!["), "les crochets d'image ne doivent plus apparaître : {texte}");
+
+        // Balise HTML en début de ligne : colorée, pas laissée en texte brut.
+        let r = md("<img src=\"a.png\" width=\"112\">");
+        assert!(r.contains(&(Role::Keyword, "img".into())), "{r:?}");
+        assert!(r.contains(&(Role::Key, "src".into())), "{r:?}");
+
+        // Balise au milieu d'une phrase (<kbd> est partout dans les README).
+        let r = md("Appuyez sur <kbd>Ctrl</kbd> pour copier");
+        assert!(r.contains(&(Role::Keyword, "kbd".into())), "{r:?}");
+        assert!(r.contains(&(Role::Plain, "Ctrl".into())), "{r:?}");
+
+        // Code à l'intérieur d'un gras.
+        let r = md("**un `bout` ici**");
+        assert!(r.contains(&(Role::Code, "bout".into())), "{r:?}");
+    }
+
+    /// Un tableau est aligné en colonnes, comme le JSON est indenté.
+    #[test]
+    fn markdown_tables_are_aligned() {
+        let lignes = highlight("| Fichier | Pour qui |\n|---|---|\n| `a.deb` | Ubuntu et Debian |\n", Lang::Markdown);
+        let rendu: Vec<String> = lignes.iter().map(|l| l.iter().map(|s| s.text.as_str()).collect()).collect();
+        // Toutes les lignes du tableau ont la même largeur une fois alignées.
+        assert_eq!(rendu[0].chars().count(), rendu[2].chars().count(), "{rendu:#?}");
+        assert_eq!(rendu[1].chars().count(), rendu[2].chars().count(), "{rendu:#?}");
+        assert!(rendu[1].contains('─'), "la ligne de séparation doit être un filet : {rendu:#?}");
+        assert!(rendu[0].starts_with('│') && rendu[0].ends_with('│'), "{rendu:#?}");
+        // Le contenu des cellules est conservé.
+        assert!(rendu[2].contains("a.deb") && rendu[2].contains("Ubuntu et Debian"), "{rendu:#?}");
     }
 
     /// Sans les règles de délimitation, la vue abîmerait du texte ordinaire.
