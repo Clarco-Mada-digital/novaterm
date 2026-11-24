@@ -15,7 +15,8 @@ use std::path::PathBuf;
 const HELP: &str = "Usage : novaterm-cli --imgcat [--width N|N%|Npx] image…
         novaterm-cli <option de novaterm>
 
-Affiche une image dans le terminal (PNG, JPEG, GIF, WebP, BMP, ICO, SVG).
+Affiche une image dans le terminal : fichier local ou adresse https://.
+Formats : PNG, JPEG, GIF, WebP, BMP, ICO, SVG.
 Les autres options sont transmises à novaterm (--help, --version, --explain…).";
 
 /// Séquence iTerm2 d'affichage d'une image (même format que `novaterm --imgcat`).
@@ -27,6 +28,53 @@ fn iterm_sequence(bytes: &[u8], name: &str, width: Option<&str>) -> String {
         args.push_str(&format!(";width={w}"));
     }
     format!("\x1b]1337;File={args}:{}\x07\n", b64.encode(bytes))
+}
+
+/// Taille maximale téléchargée (identique à `images::MAX_IMAGE_BYTES`).
+const MAX_IMAGE_BYTES: usize = 64 * 1024 * 1024;
+
+/// Une adresse web plutôt qu'un fichier ?
+fn is_url(arg: &str) -> bool {
+    arg.starts_with("https://") || arg.starts_with("http://")
+}
+
+/// Télécharge une image avec curl (présent sur Windows 10 et suivants).
+/// Dupliqué depuis `main.rs` : ce binaire est volontairement autonome.
+fn fetch_url(url: &str) -> Result<Vec<u8>, String> {
+    let out = std::process::Command::new(if cfg!(windows) { "curl.exe" } else { "curl" })
+        .args([
+            "-fsSL",
+            "--max-time",
+            "30",
+            "--max-filesize",
+            &MAX_IMAGE_BYTES.to_string(),
+            "-H",
+            &format!("User-Agent: NovaTerm/{}", env!("CARGO_PKG_VERSION")),
+            url,
+        ])
+        .output()
+        .map_err(|_| "curl est introuvable : impossible de télécharger l'image".to_string())?;
+    if !out.status.success() {
+        return Err(format!("téléchargement impossible ({})", String::from_utf8_lossy(&out.stderr).trim()));
+    }
+    if out.stdout.is_empty() {
+        return Err("réponse vide".into());
+    }
+    Ok(out.stdout)
+}
+
+/// Nom à annoncer dans la séquence (dernier segment de l'adresse, ou du chemin).
+fn image_name(arg: &str) -> &str {
+    let name = if is_url(arg) {
+        arg.split(['?', '#']).next().unwrap_or(arg).trim_end_matches('/').rsplit('/').next().unwrap_or("")
+    } else {
+        std::path::Path::new(arg).file_name().and_then(|n| n.to_str()).unwrap_or("")
+    };
+    if name.is_empty() {
+        "image"
+    } else {
+        name
+    }
 }
 
 /// Chemin de `novaterm`, à côté de ce binaire.
@@ -49,16 +97,16 @@ fn imgcat(args: &[String]) -> i32 {
         }
     }
     if files.is_empty() {
-        eprintln!("Usage : imgcat [--width 40|50%|300px] image…  (PNG, JPEG, GIF, WebP, BMP, ICO, SVG)");
+        eprintln!("Usage : imgcat [--width 40|50%|300px] image…  (fichier ou adresse https://)");
         return 2;
     }
     let mut code = 0;
     let mut out = std::io::stdout().lock();
     for file in files {
-        match std::fs::read(file) {
+        let read = if is_url(file) { fetch_url(file) } else { std::fs::read(file).map_err(|e| e.to_string()) };
+        match read {
             Ok(bytes) => {
-                let name = std::path::Path::new(file).file_name().and_then(|n| n.to_str()).unwrap_or("image");
-                let _ = out.write_all(iterm_sequence(&bytes, name, width.as_deref()).as_bytes());
+                let _ = out.write_all(iterm_sequence(&bytes, image_name(file), width.as_deref()).as_bytes());
             }
             Err(e) => {
                 eprintln!("imgcat : {file} : {e}");

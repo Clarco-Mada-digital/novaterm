@@ -114,6 +114,9 @@ jobs:
     if: startsWith(github.ref, 'refs/tags/v') || inputs.tag != ''
     needs: [linux, windows, macos]
     runs-on: ubuntu-latest
+    # Au niveau du job : une condition « if » d'étape ne voit pas un env d'étape.
+    env:
+      MINISIGN_SECRET_KEY: ${{ secrets.MINISIGN_SECRET_KEY }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -129,6 +132,21 @@ jobs:
           merge-multiple: true
       - name: Sommes de contrôle
         run: cd dist && sha256sum * > SHA256SUMS.txt && cat SHA256SUMS.txt
+      # Signature des sommes : c'est elle qui protège réellement les mises à jour.
+      # Le SHA-256 seul vient de la même Release que les fichiers ; une signature
+      # exige la clé privée, gardée dans le secret MINISIGN_SECRET_KEY.
+      # Sans le secret, l'étape est sautée : la publication reste possible.
+      - name: Signer les sommes de contrôle
+        if: env.MINISIGN_SECRET_KEY != ''
+        run: |
+          sudo apt-get update && sudo apt-get install -y minisign
+          # La clé doit être SANS mot de passe (minisign -G -W) : une étape de CI
+          # ne peut pas en saisir un.
+          printf '%s\n' "$MINISIGN_SECRET_KEY" > "$RUNNER_TEMP/minisign.key"
+          minisign -S -s "$RUNNER_TEMP/minisign.key" \
+            -m dist/SHA256SUMS.txt -x dist/SHA256SUMS.txt.minisig
+          shred -u "$RUNNER_TEMP/minisign.key" 2>/dev/null || rm -f "$RUNNER_TEMP/minisign.key"
+          cat dist/SHA256SUMS.txt.minisig
       - uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ env.TAG }}

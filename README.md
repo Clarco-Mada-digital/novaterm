@@ -45,6 +45,14 @@ Sous-commandes et options **avec leur description** : git, docker, cargo, npm,
 pip, apt, systemctl, kubectl, Django… plus vos branches git, scripts npm, cibles
 make et hôtes SSH.
 
+**🔍 Voir et chercher dans la sortie**
+<kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>O</kbd> ouvre la sortie d'une commande dans une
+fenêtre défilable, avec **recherche** (<kbd>Entrée</kbd> pour l'occurrence suivante).
+Le **JSON est indenté**, `cat script.py` ou `cat style.css` s'affichent **avec les
+couleurs du langage** (Python, JS/TS, Rust, shell, CSS, HTML, YAML, TOML), et
+`cat README.md` est **rendu en markdown**. La sortie d'origine reste consultable et
+copiable d'un clic.
+
 **▤ Blocs de commandes**
 Chaque commande devient un bloc : barre verte / rouge, badge « ✔ 2,4 s » ou
 « ✖ 1 », boutons copier la sortie / relancer. <kbd>Ctrl</kbd>+<kbd>↑</kbd> /
@@ -54,8 +62,8 @@ Chaque commande devient un bloc : barre verte / rouge, badge « ✔ 2,4 s » ou
 Un long build se termine pendant que vous êtes ailleurs ? Notification du bureau.
 
 **🖼 Images dans le terminal**
-PNG, JPEG, GIF, WebP, **SVG**… `imgcat photo.png`, et les outils compatibles
-Kitty / iTerm2 (chafa, viu, ranger, yazi).
+PNG, JPEG, GIF, WebP, **SVG**… `imgcat photo.png`, `imgcat https://…` pour une
+image en ligne, et les outils compatibles Kitty / iTerm2 (chafa, viu, ranger, yazi).
 
 </td>
 <td width="50%" valign="top">
@@ -275,6 +283,7 @@ Tous sont modifiables dans Paramètres → Raccourcis (« + » puis la combinais
 | Ctrl+Maj+I | Taper dans tous les panneaux (diffusion) |
 | Ctrl+→ | Accepter un mot de la suggestion |
 | Ctrl+Alt+C | Copier la sortie de la dernière commande |
+| Ctrl+Alt+O | Voir la sortie en grand (JSON mis en forme) |
 | Ctrl+Alt+S / Ctrl+Alt+P | Snippets / profils |
 | Ctrl+Insert, Maj+Insert | Copier, coller |
 | Ctrl+Maj+S | Coller la sélection (PRIMARY) |
@@ -326,6 +335,7 @@ novaterm --profile NOM        ouvrir un profil de projet
 novaterm --cwd DOSSIER        ouvrir un onglet dans ce dossier
 novaterm --quake              terminal rapide ; --toggle l'affiche / le masque
 novaterm --imgcat image.svg   afficher une image (--width 40 | 50% | 300px)
+novaterm --imgcat https://…   afficher une image en ligne (téléchargée par curl)
 novaterm --explain "tar -xzf a.tar.gz"   expliquer une commande (hors ligne)
 novaterm --check-update       vérifier si une nouvelle version existe
 novaterm --quake-shortcut F12 créer le raccourci du terminal rapide (--quake-shortcut-remove)
@@ -408,6 +418,7 @@ src/
   shell.rs        intégration zsh / bash
   history.rs      historique et suggestions
   completions.rs  complétion intelligente
+  format.rs       vue d'un bloc : JSON mis en forme, coloration des langages
   links.rs        liens, chemins, traces d'erreur, éditeurs
   session.rs      session et profils
   quake.rs        terminal rapide
@@ -464,6 +475,44 @@ vaut `0`, le projet est en développement initial : `0.0.x` = **bêta** (publié
 pré-version), `0.x` = stabilisation, `1.0.0` = première version stable. On peut
 aussi publier une préversion explicite : `./packaging/release.sh 0.3.0-rc.1`.
 
+<details>
+<summary><b>🔑 Signer les publications (à faire une fois)</b></summary>
+
+Le `SHA256SUMS.txt` vient de la même Release que les fichiers : il protège d'un
+téléchargement corrompu, pas d'une Release falsifiée. Une **signature** ferme cette
+porte, car elle exige la clé privée.
+
+```bash
+# 1. Générer une paire de clés SANS mot de passe (une étape de CI ne peut pas en saisir un)
+minisign -G -W -p minisign.pub -s minisign.key
+
+# 2. Coller le contenu de minisign.key dans le secret GitHub du dépôt :
+#    Settings → Secrets and variables → Actions → New repository secret
+#    Nom : MINISIGN_SECRET_KEY
+cat minisign.key
+
+# 3. Publier la clé PUBLIQUE dans le dépôt (elle est embarquée dans le binaire)
+cp minisign.pub assets/minisign.pub
+git add assets/minisign.pub && git commit -m "Clé publique de signature"
+
+# 4. Mettre minisign.key en lieu sûr (gestionnaire de mots de passe) et l'effacer d'ici
+shred -u minisign.key
+```
+
+Tant que `assets/minisign.pub` contient le marqueur `REMPLACEZ_CETTE_LIGNE`, les mises
+à jour s'en tiennent au contrôle SHA-256 (comportement d'avant). Dès qu'une vraie clé
+y figure, la signature devient **obligatoire** : une publication sans
+`SHA256SUMS.txt.minisig` valide est refusée par l'application.
+
+Vérifier une publication à la main :
+
+```bash
+minisign -V -p assets/minisign.pub -m SHA256SUMS.txt
+sha256sum -c SHA256SUMS.txt --ignore-missing
+```
+
+</details>
+
 **Publier une version** (les paquets ne sont construits que quand vous le décidez,
 jamais à chaque push) :
 
@@ -485,13 +534,17 @@ Release est publiée sans toucher au tag (ou `gh workflow run release.yml -f tag
 
 - [x] Intégration PowerShell, cmd et OSC 133 (suggestions et blocs partout)
 - [ ] Intégration fish et nu aux petits oignons
-- [ ] Décodage des images hors du fil de l'interface (grandes images)
+- [x] Décodage des images hors du fil de l'interface (grandes images)
 - [ ] Notifications Windows avec icône NovaTerm (identifiant d'application enregistré)
 - [ ] Terminal par défaut de Windows 11 ([transfert ConPTY](docs/windows-terminal-par-defaut.md))
 - [ ] Mises à jour signées (la somme SHA-256 vient de la même source que le fichier)
 - [ ] Clés d'API dans le trousseau du système plutôt qu'en clair
 - [ ] Rendu GPU dédié et ligatures
-- [ ] Recherche dans la sortie d'un bloc, repli des longues sorties
+- [x] Vue de la sortie d'un bloc, avec mise en forme du JSON
+- [x] Recherche dans la vue d'une sortie
+- [ ] Repli des longues sorties dans le terminal
+- [x] Coloration de quelques langages dans la vue (Python, JS, Rust, CSS, HTML…)
+- [x] Vue markdown (titres, emphase, listes, liens, blocs de code colorés)
 - [ ] Synchronisation des réglages et snippets entre machines
 - [ ] Extensions / thèmes partagés par la communauté
 - [ ] Applications signées (Windows, macOS) et mise à jour automatique

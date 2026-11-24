@@ -75,6 +75,8 @@ pub struct UpdateInfo {
     /// AppImage correspondant à l'architecture actuelle (si publiée).
     pub appimage_url: Option<String>,
     pub sums_url: Option<String>,
+    /// Signature minisign des sommes de contrôle.
+    pub sig_url: Option<String>,
 }
 
 fn curl(args: &[&str]) -> Result<Vec<u8>, String> {
@@ -126,6 +128,7 @@ pub fn pick_update(json: &[u8], current: &Version, include_pre: bool) -> Result<
             prerelease,
             appimage_url: find(&|n: &str| n.ends_with(&format!("-{arch}.AppImage"))),
             sums_url: find(&|n: &str| n == "SHA256SUMS.txt"),
+            sig_url: find(&|n: &str| n == "SHA256SUMS.txt.minisig"),
         });
     }
     Ok(best)
@@ -135,6 +138,41 @@ pub fn pick_update(json: &[u8], current: &Version, include_pre: bool) -> Result<
 pub fn check(include_pre: bool) -> Result<Option<UpdateInfo>, String> {
     let json = curl(&["-H", "Accept: application/vnd.github+json", &format!("https://api.github.com/repos/{REPO}/releases?per_page=15")])?;
     pick_update(&json, &Version::current(), include_pre)
+}
+
+/// Clé publique de signature des publications (format minisign).
+///
+/// Tant qu'elle n'est pas renseignée, les mises à jour s'en tiennent au contrôle
+/// SHA-256 : c'est ce que faisait NovaTerm jusqu'ici. Dès qu'une vraie clé est
+/// posée dans `assets/minisign.pub`, la signature devient **obligatoire** — y
+/// compris son absence, qui est alors refusée (sans quoi il suffirait de retirer
+/// le fichier de signature pour contourner la vérification).
+const PUBKEY: &str = include_str!("../assets/minisign.pub");
+
+/// Clé publique utilisable, ou `None` si le projet n'en a pas encore.
+fn public_key() -> Option<minisign_verify::PublicKey> {
+    minisign_verify::PublicKey::decode(PUBKEY.lines().find(|l| !l.starts_with("untrusted comment:") && !l.trim().is_empty())?.trim()).ok()
+}
+
+/// Vérifie la signature minisign des sommes de contrôle.
+///
+/// C'est elle qui protège vraiment : le SHA-256 seul vient de la même Release que
+/// le fichier, donc quiconque peut publier une Release peut aussi publier la somme
+/// correspondante. Une signature, elle, exige la clé privée.
+fn verify_sums(sums: &[u8], signature: Option<&[u8]>) -> Result<(), String> {
+    verify_sums_with(public_key().as_ref(), sums, signature)
+}
+
+/// Cœur de la vérification, la clé étant fournie (pour pouvoir la tester).
+fn verify_sums_with(key: Option<&minisign_verify::PublicKey>, sums: &[u8], signature: Option<&[u8]>) -> Result<(), String> {
+    let Some(key) = key else {
+        // Projet sans clé : on conserve le comportement d'avant.
+        return Ok(());
+    };
+    let signature = signature.ok_or("signature absente de la publication : mise à jour refusée")?;
+    let sig = minisign_verify::Signature::decode(&String::from_utf8_lossy(signature))
+        .map_err(|_| "signature illisible : mise à jour refusée".to_string())?;
+    key.verify(sums, &sig, false).map_err(|_| "signature invalide : mise à jour refusée".to_string())
 }
 
 fn sha256_file(path: &Path) -> Result<String, String> {
@@ -159,7 +197,11 @@ pub fn update_appimage(info: &UpdateInfo, appimage: &Path) -> Result<PathBuf, St
     let url = info.appimage_url.as_deref().ok_or("aucune AppImage publiée pour cette architecture")?;
     let sums_url = info.sums_url.as_deref().ok_or("sommes de contrôle absentes : mise à jour refusée")?;
     let file_name = url.rsplit('/').next().unwrap_or_default().to_string();
-    let sums = String::from_utf8_lossy(&curl(&[sums_url])?).to_string();
+    let sums_bytes = curl(&[sums_url])?;
+    // Signature : téléchargée à côté des sommes, et vérifiée avant toute confiance.
+    let signature = info.sig_url.as_deref().and_then(|u| curl(&[u]).ok());
+    verify_sums(&sums_bytes, signature.as_deref())?;
+    let sums = String::from_utf8_lossy(&sums_bytes).to_string();
     let expected = sums
         .lines()
         .find_map(|l| {
@@ -255,6 +297,44 @@ mod tests {
         assert!(size > 1_000_000, "AppImage téléchargée ({size} octets)");
         println!("mise à jour vers {} OK ({} Mo)", info.version, size / 1_048_576);
         let _ = std::fs::remove_dir_all(dir);
+    }
+
+    /// Vérification de bout en bout avec une vraie paire minisign (vecteur de test
+    /// de la bibliothèque) : une signature valide passe, un contenu modifié non.
+    #[test]
+    fn real_signature_is_accepted_and_tampering_rejected() {
+        let key = minisign_verify::PublicKey::from_base64("RWQf6LRCGA9i53mlYecO4IzT51TGPpvWucNSCh1CBM0QTaLn73Y7GFO3").unwrap();
+        let sig = "untrusted comment: signature from minisign secret key\nRUQf6LRCGA9i559r3g7V1qNyJDApGip8MfqcadIgT9CuhV3EMhHoN1mGTkUidF/z7SrlQgXdy8ofjb7bNJJylDOocrCo8KLzZwo=\ntrusted comment: timestamp:1633700835\tfile:test\tprehashed\nwLMDjy9FLAuxZ3q4NlEvkgtyhrr0gtTu6KC4KBJdITbbOeAi1zBIYo0v4iTgt8jJpIidRJnp94ABQkJAgAooBQ==";
+        // Contenu authentique : accepté.
+        assert!(verify_sums_with(Some(&key), b"test", Some(sig.as_bytes())).is_ok());
+        // Une seule lettre changée : refusé.
+        assert!(verify_sums_with(Some(&key), b"tesT", Some(sig.as_bytes())).is_err());
+        // Signature retirée alors qu'une clé est configurée : refusé.
+        assert!(verify_sums_with(Some(&key), b"test", None).is_err());
+        // Signature valide mais d'une autre clé : refusé.
+        let autre = minisign_verify::PublicKey::from_base64("RWSmKaOrT6m3TGwjwBovgOmlh3YuP4VMnX5zrsmo5mBzk4Yq5cdC7wOH").unwrap();
+        assert!(verify_sums_with(Some(&autre), b"test", Some(sig.as_bytes())).is_err());
+    }
+
+    /// Sans clé publique configurée, on garde le comportement d'avant (SHA-256 seul).
+    #[test]
+    fn signature_is_optional_until_a_key_is_set() {
+        if public_key().is_none() {
+            assert!(verify_sums(b"peu importe", None).is_ok());
+        } else {
+            // Clé posée : l'absence de signature doit être refusée, sinon il
+            // suffirait de supprimer le fichier .minisig pour tout contourner.
+            assert!(verify_sums(b"peu importe", None).is_err());
+            assert!(verify_sums(b"peu importe", Some(b"pas une signature")).is_err());
+        }
+    }
+
+    /// La clé livrée doit être soit un vrai marqueur « à remplacer », soit une clé
+    /// valide : un fichier à moitié rempli passerait sinon inaperçu.
+    #[test]
+    fn public_key_file_is_coherent() {
+        let marqueur = PUBKEY.contains("REMPLACEZ_CETTE_LIGNE");
+        assert!(marqueur || public_key().is_some(), "assets/minisign.pub n'est ni un marqueur ni une clé valide");
     }
 
     #[test]

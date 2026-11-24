@@ -131,12 +131,76 @@ use ai_panel::{ai_input_id, AiPanel};
 #[derive(Clone, Copy)]
 enum BlockAct {
     ShowTips,
+    ViewOutput,
     Explain,
     Ai,
     CopyCommand,
     CopyOutput,
     Rerun,
     ScrollTop,
+}
+
+/// Sortie d'un bloc affichée dans une fenêtre à part : texte d'origine conservé,
+/// et mise en forme seulement proposée (le JSON est indenté et coloré).
+struct OutputView {
+    command: String,
+    raw: String,
+    /// Version mise en forme, si la sortie a été reconnue comme du JSON.
+    pretty: Option<String>,
+    /// L'utilisateur regarde le texte d'origine.
+    show_raw: bool,
+    /// Lignes colorées, **calculées une seule fois** à l'ouverture : le rendu ne
+    /// fait que piocher les lignes visibles. Vide si rien n'a été reconnu.
+    styled: Vec<Vec<crate::format::Span>>,
+    /// Lignes du texte d'origine, pour n'afficher que ce qui est à l'écran.
+    raw_lines: Vec<String>,
+    /// Lignes du texte enrichi, en clair (pour la recherche).
+    shown_lines: Vec<String>,
+    /// Le texte a été mis en forme (et pas seulement coloré).
+    reformatted: bool,
+    /// Recherche dans la sortie.
+    query: String,
+    matches: Vec<crate::format::Match>,
+    /// Occurrence sélectionnée (dans `matches`).
+    current: usize,
+    /// Ligne vers laquelle faire défiler à la prochaine image.
+    scroll_to: Option<usize>,
+    /// Donner le focus au champ de recherche à la prochaine image.
+    focus: bool,
+}
+
+impl OutputView {
+    /// Lignes actuellement affichées, en clair.
+    fn lines(&self) -> &[String] {
+        if self.show_raw { &self.raw_lines } else { &self.shown_lines }
+    }
+
+    /// Relance la recherche (changement de texte ou de mode d'affichage).
+    fn refresh_matches(&mut self) {
+        self.matches = crate::format::search(self.lines(), &self.query);
+        self.current = 0;
+        self.scroll_to = self.matches.first().map(|m| m.line);
+    }
+
+    /// Passe à l'occurrence suivante (ou précédente), en bouclant.
+    fn step(&mut self, forward: bool) {
+        if self.matches.is_empty() {
+            return;
+        }
+        self.current = if forward {
+            (self.current + 1) % self.matches.len()
+        } else {
+            (self.current + self.matches.len() - 1) % self.matches.len()
+        };
+        self.scroll_to = Some(self.matches[self.current].line);
+    }
+
+    /// Débuts d'occurrences sur une ligne, et index de l'occurrence sélectionnée.
+    fn matches_on(&self, line: usize) -> (Vec<usize>, Option<usize>) {
+        let starts = self.matches.iter().filter(|m| m.line == line).map(|m| m.start).collect();
+        let courant = self.matches.get(self.current).filter(|m| m.line == line).map(|m| m.start);
+        (starts, courant)
+    }
 }
 
 /// Fenêtre « Rechercher dans l'historique ».
@@ -302,6 +366,8 @@ pub struct NovaApp {
     tips_rx: Receiver<(u64, u32, Vec<crate::helpers::Tip>)>,
     /// Fenêtre d'astuces ouverte : (panneau, bloc).
     tip_popup: Option<(u64, u32)>,
+    /// Fenêtre « voir la sortie » d'un bloc.
+    output_view: Option<OutputView>,
     /// Explication en cours / affichée.
     explain_rx: Option<Receiver<crate::helpers::Explanation>>,
     explanation: Option<crate::helpers::Explanation>,
@@ -597,6 +663,7 @@ impl NovaApp {
             tips_tx: tips_chan.0,
             tips_rx: tips_chan.1,
             tip_popup: None,
+            output_view: None,
             explain_rx: None,
             explanation: None,
             explain_open: false,
@@ -844,6 +911,54 @@ impl NovaApp {
         let lines = text.lines().count();
         self.ctx.copy_text(text);
         self.toast(crate::i18n::tf("Sortie copiée ({} lignes)", &[&lines]));
+    }
+
+    /// Ouvre la sortie d'un bloc dans une fenêtre : pratique pour une longue sortie,
+    /// et le JSON y est indenté et coloré. Le texte d'origine reste accessible.
+    fn view_block_output(&mut self, pane_id: u64, block: u32) {
+        let Some(raw) = self.panes.get(&pane_id).and_then(|p| p.block_output(block)) else {
+            self.toast(t("Sortie introuvable (effacée de l'historique)"));
+            return;
+        };
+        if raw.trim().is_empty() {
+            self.toast(t("Cette commande n'a rien affiché"));
+            return;
+        }
+        let command = self.block_command(pane_id, block).unwrap_or_default();
+        // JSON : indenté. Sinon, coloré si la commande dit quel fichier elle affiche
+        // (« cat script.py »). Tout est calculé ici, une fois pour toutes.
+        let pretty = crate::format::format_json(&raw);
+        let lang = if pretty.is_some() { Some(crate::format::Lang::Json) } else { crate::format::detect_lang(&command) };
+        let shown = pretty.as_deref().unwrap_or(&raw);
+        let styled = match lang {
+            Some(l) => crate::format::highlight(shown, l),
+            None => Vec::new(),
+        };
+        let raw_lines: Vec<String> = raw.lines().map(String::from).collect();
+        // Dérivé des fragments, et non du texte source : le markdown masque les
+        // marques d'emphase, la recherche doit porter sur ce qui est affiché.
+        let shown_lines: Vec<String> = if styled.is_empty() {
+            raw_lines.clone()
+        } else {
+            styled.iter().map(|l| l.iter().map(|s| s.text.as_str()).collect()).collect()
+        };
+        let reformatted = pretty.is_some();
+        self.output_view = Some(OutputView {
+            command,
+            raw,
+            pretty,
+            show_raw: false,
+            styled,
+            raw_lines,
+            shown_lines,
+            reformatted,
+            query: String::new(),
+            matches: Vec::new(),
+            current: 0,
+            scroll_to: None,
+            // On peut chercher dès l'ouverture, sans attraper la souris.
+            focus: true,
+        });
     }
 
     fn block_command(&self, pane_id: u64, block: u32) -> Option<String> {
@@ -1782,6 +1897,10 @@ impl NovaApp {
             }
             PrevCommand => self.jump_command(true),
             NextCommand => self.jump_command(false),
+            ViewLastOutput => match self.last_block() {
+                Some((p, b)) => self.view_block_output(p, b),
+                None => self.toast(t("Aucune commande terminée")),
+            },
             CopyLastOutput => match self.last_block() {
                 Some((p, b)) => self.copy_block_output(p, b),
                 None => self.toast(t("Aucune commande (intégration shell inactive ?)")),
@@ -2278,6 +2397,9 @@ impl NovaApp {
                                     if b(ui, "📋 sortie", t("Copier la sortie")) {
                                         action = Some((id, vb.id, BlockAct::CopyOutput));
                                     }
+                                    if b(ui, "🔍", t("Voir la sortie en grand (JSON mis en forme)")) {
+                                        action = Some((id, vb.id, BlockAct::ViewOutput));
+                                    }
                                     if self.config.help_explain && b(ui, "?", t("Expliquer la commande (hors ligne)")) {
                                         action = Some((id, vb.id, BlockAct::Explain));
                                     }
@@ -2572,6 +2694,211 @@ impl NovaApp {
     }
 
     /// Fenêtre des astuces d'un bloc en échec.
+    /// Fenêtre « voir la sortie ». Le JSON reconnu est indenté et coloré avec les
+    /// couleurs du thème ; un bouton permet de revenir au texte d'origine, qui est
+    /// toujours ce que l'on copie quand on le demande.
+    fn render_output_view(&mut self, ctx: &egui::Context) {
+        let Some(view) = &self.output_view else { return };
+        let mut open = true;
+        let mut show_raw = view.show_raw;
+        let mut copy: Option<String> = None;
+        let mut query = view.query.clone();
+        let prendre_focus = view.focus;
+        let mut requery = false;
+        let mut step: Option<bool> = None;
+        // Une vue enrichie n'est proposée que si quelque chose a été reconnu.
+        let enriched = !view.styled.is_empty();
+        let shown_text = match (&view.pretty, show_raw) {
+            (Some(p), false) => p.as_str(),
+            _ => view.raw.as_str(),
+        };
+        let rich = enriched && !show_raw;
+        let total = if rich { view.styled.len() } else { view.raw_lines.len() };
+        let title = crate::i18n::tf("🔍 Sortie de « {} »", &[&Self::one_line(&view.command, 60)]);
+        let mono = egui::FontId::monospace(self.config.font_size.clamp(10.0, 20.0));
+        let label = if view.reformatted { t("Mis en forme") } else { t("Coloré") };
+        egui::Window::new(title)
+            .open(&mut open)
+            .collapsible(false)
+            .resizable(true)
+            .default_size([760.0, 520.0])
+            .show(ctx, |ui| {
+                ui.horizontal(|ui| {
+                    if enriched {
+                        ui.selectable_value(&mut show_raw, false, label);
+                        ui.selectable_value(&mut show_raw, true, t("Texte d'origine"));
+                    } else {
+                        ui.label(egui::RichText::new(t("Texte d'origine")).color(Color32::GRAY));
+                    }
+                    ui.separator();
+                    if ui.small_button(t("📋 Copier")).on_hover_text(t("Copier ce qui est affiché")).clicked() {
+                        copy = Some(shown_text.to_string());
+                    }
+                    ui.label(egui::RichText::new(crate::i18n::tf("{} lignes", &[&total])).small().color(Color32::GRAY));
+                });
+                // Recherche dans la sortie.
+                ui.horizontal(|ui| {
+                    ui.label("🔎");
+                    let champ = ui.add(
+                        egui::TextEdit::singleline(&mut query).desired_width(220.0).hint_text(t("Chercher dans la sortie")),
+                    );
+                    if prendre_focus {
+                        champ.request_focus();
+                    }
+                    if champ.changed() {
+                        requery = true;
+                    }
+                    // Entrée : occurrence suivante ; Maj+Entrée : précédente.
+                    if champ.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)) {
+                        step = Some(!ui.input(|i| i.modifiers.shift));
+                        // On garde le curseur dans le champ pour enchaîner les Entrée.
+                        champ.request_focus();
+                    }
+                    let actif = !view.matches.is_empty();
+                    if ui.add_enabled(actif, egui::Button::new("▲").small()).on_hover_text(t("Occurrence précédente")).clicked() {
+                        step = Some(false);
+                    }
+                    if ui.add_enabled(actif, egui::Button::new("▼").small()).on_hover_text(t("Occurrence suivante")).clicked() {
+                        step = Some(true);
+                    }
+                    let compte = if query.is_empty() {
+                        String::new()
+                    } else if actif {
+                        crate::i18n::tf("{} / {}", &[&(view.current + 1), &view.matches.len()])
+                    } else {
+                        t("aucune occurrence").to_string()
+                    };
+                    ui.label(egui::RichText::new(compte).small().color(if actif { Color32::GRAY } else { Color32::from_rgb(230, 180, 90) }));
+                });
+                ui.separator();
+                let row_h = ui.fonts(|f| f.row_height(&mono));
+                // L'espacement doit être annulé **avant** `show_rows` : il s'en sert
+                // pour calculer la hauteur totale. Le faire à l'intérieur seulement
+                // décalait le défilement, d'autant plus que la ligne visée est loin.
+                ui.spacing_mut().item_spacing.y = 0.0;
+                let longueur = query.chars().count();
+                let fond = rgb(self.theme.ansi[3]).gamma_multiply(0.35);
+                let fond_courant = rgb(self.theme.ansi[11]).gamma_multiply(0.65);
+                let mut aire = egui::ScrollArea::both().auto_shrink([false, false]);
+                // Amener l'occurrence choisie à l'écran, un peu au-dessus du bord.
+                if let Some(ligne) = view.scroll_to {
+                    let cible = (ligne.saturating_sub(3)) as f32 * row_h;
+                    aire = aire.vertical_scroll_offset(cible);
+                }
+                // `show_rows` ne met en page que les lignes visibles : une sortie de
+                // dix mille lignes coûte autant à afficher qu'une seule page.
+                aire.show_rows(ui, row_h, total, |ui, range| {
+                    for i in range {
+                        let (debuts, courant) = view.matches_on(i);
+                        let mut job = egui::text::LayoutJob::default();
+                        // Le texte brut est traité comme un unique fragment ordinaire :
+                        // les deux modes partagent ainsi le même surlignage.
+                        let ligne_brute;
+                        let spans: &[crate::format::Span] = if rich {
+                            &view.styled[i]
+                        } else {
+                            ligne_brute = vec![crate::format::Span {
+                                text: view.raw_lines[i].clone(),
+                                role: crate::format::Role::Plain,
+                            }];
+                            &ligne_brute
+                        };
+                        let mut offset = 0usize;
+                        for (span, marque) in crate::format::split_on_matches(spans, &debuts, longueur) {
+                            let selectionne = marque && courant == Some(offset);
+                            let mut fmt = self.role_format(span.role, &mono);
+                            // Le surlignage de recherche l'emporte sur le fond du rôle.
+                            if selectionne {
+                                fmt.background = fond_courant;
+                            } else if marque {
+                                fmt.background = fond;
+                            }
+                            job.append(&span.text, 0.0, fmt);
+                            offset += span.text.chars().count();
+                        }
+                        // Une ligne vide doit garder sa hauteur : sans cela, les
+                        // respirations du code disparaîtraient.
+                        if job.is_empty() {
+                            job.append(" ", 0.0, egui::TextFormat { font_id: mono.clone(), ..Default::default() });
+                        }
+                        ui.label(job);
+                    }
+                });
+            });
+        if let Some(text) = copy {
+            let lines = text.lines().count();
+            ctx.copy_text(text);
+            self.toast(crate::i18n::tf("Sortie copiée ({} lignes)", &[&lines]));
+        }
+        let echap = ctx.input(|i| i.key_pressed(egui::Key::Escape));
+        // Échap vide d'abord la recherche ; une seconde fois, elle ferme la fenêtre.
+        let fermer = !open || (echap && query.is_empty());
+        if fermer {
+            self.output_view = None;
+            return;
+        }
+        let Some(v) = &mut self.output_view else { return };
+        v.scroll_to = None;
+        v.focus = false;
+        if echap {
+            query.clear();
+            requery = true;
+        }
+        if show_raw != v.show_raw {
+            v.show_raw = show_raw;
+            requery = true;
+        }
+        if query != v.query || requery {
+            v.query = query;
+            v.refresh_matches();
+        }
+        if let Some(forward) = step {
+            v.step(forward);
+        }
+    }
+
+    /// Mise en forme d'un fragment, d'après le thème du terminal.
+    ///
+    /// La **taille de police ne change jamais** : les lignes de la vue doivent
+    /// toutes avoir la même hauteur, sinon le défilement vers une occurrence de
+    /// recherche se décale. Un titre se distingue donc par la couleur, pas par
+    /// la taille.
+    fn role_format(&self, role: crate::format::Role, mono: &egui::FontId) -> egui::TextFormat {
+        use crate::format::Role;
+        let ansi = |i: usize| rgb(self.theme.ansi[i]);
+        let fg = rgb(self.theme.foreground);
+        let mut f = egui::TextFormat { font_id: mono.clone(), color: fg, ..Default::default() };
+        match role {
+            Role::Key => f.color = ansi(12),     // bleu vif
+            Role::Text => f.color = ansi(10),    // vert vif
+            Role::Number => f.color = ansi(14),  // cyan vif
+            Role::Literal => f.color = ansi(11), // jaune vif
+            Role::Keyword => f.color = ansi(13), // magenta vif
+            Role::Comment => f.color = fg.gamma_multiply(0.45),
+            Role::Punct => f.color = fg.gamma_multiply(0.7),
+            Role::Plain => {}
+            // --- markdown ---
+            Role::Heading => {
+                f.color = ansi(12);
+                f.underline = Stroke::new(1.0_f32, ansi(12).gamma_multiply(0.5));
+            }
+            Role::Bold => f.color = ansi(15),
+            Role::Italic => {
+                f.italics = true;
+                f.color = fg.gamma_multiply(0.9);
+            }
+            Role::Code => {
+                f.color = ansi(10);
+                f.background = fg.gamma_multiply(0.08);
+            }
+            Role::Link => {
+                f.color = ansi(14);
+                f.underline = Stroke::new(1.0_f32, ansi(14).gamma_multiply(0.7));
+            }
+        }
+        f
+    }
+
     fn render_tips(&mut self, ctx: &egui::Context) {
         let Some((pid, bid)) = self.tip_popup else { return };
         let Some(tips) = self.panes.get(&pid).and_then(|p| p.tips.get(&bid)).cloned() else {
@@ -2632,6 +2959,7 @@ impl NovaApp {
                 }
             }
             BlockAct::CopyOutput => self.copy_block_output(pane_id, block),
+            BlockAct::ViewOutput => self.view_block_output(pane_id, block),
             BlockAct::Rerun => {
                 if let Some(cmd) = self.block_command(pane_id, block) {
                     self.insert_command(pane_id, &cmd, true);
@@ -4156,6 +4484,13 @@ impl NovaApp {
                             ai.demo_type(&t);
                         }
                     }
+                    // La vue d'une sortie a son champ de recherche, comme la palette.
+                    None if self.output_view.is_some() => {
+                        if let Some(v) = self.output_view.as_mut() {
+                            v.query.push_str(&t);
+                            v.refresh_matches();
+                        }
+                    }
                     None => self.pending.push(Pending::Text(t)),
                 }
                 demo.resume_at = time + 0.15;
@@ -4849,6 +5184,7 @@ impl eframe::App for NovaApp {
         }
         self.render_history_popup(ctx);
         self.render_rename(ctx);
+        self.render_output_view(ctx);
         self.render_confirm(ctx);
 
         if changed {

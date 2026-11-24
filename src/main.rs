@@ -10,6 +10,7 @@ mod blocks;
 mod completions;
 mod config;
 mod fonts;
+mod format;
 mod guard;
 mod helpers;
 mod history;
@@ -46,7 +47,7 @@ Options :
   --toggle             afficher / masquer le terminal rapide (à lier à un raccourci)
   --quake-shortcut TOUCHE   créer le raccourci du bureau (ex. F12, Ctrl+Alt+T)
   --quake-shortcut-remove   supprimer ce raccourci
-  --imgcat FICHIER     afficher une image dans le terminal (--width N|N%|Npx)
+  --imgcat FICHIER|URL afficher une image dans le terminal (--width N|N%|Npx)
   --explain «COMMANDE» expliquer une commande (pages man, tldr ; hors ligne)
   --check-update       vérifier si une nouvelle version est publiée
   --integrate          AppImage : ranger dans ~/Applications et ajouter au menu
@@ -68,6 +69,56 @@ fn arg_value(args: &[String], name: &str) -> Option<String> {
         .cloned()
         // Forme « --option=valeur », attendue par plusieurs bureaux.
         .or_else(|| args.iter().find_map(|a| a.strip_prefix(&format!("{name}=")).map(String::from)))
+}
+
+/// Télécharge une image (`imgcat https://…`) avec curl, comme le reste du projet.
+///
+/// Seul `imgcat`, tapé par l'utilisateur, télécharge : un programme qui envoie une
+/// séquence d'image ne peut pas faire récupérer une adresse par le terminal.
+fn fetch_url(url: &str) -> Result<Vec<u8>, String> {
+    let mut cmd = std::process::Command::new(if cfg!(windows) { "curl.exe" } else { "curl" });
+    cmd.args([
+        "-fsSL",
+        "--max-time",
+        "30",
+        "--max-filesize",
+        &images::MAX_IMAGE_BYTES.to_string(),
+        "-H",
+        &format!("User-Agent: NovaTerm/{}", env!("CARGO_PKG_VERSION")),
+        url,
+    ]);
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        cmd.creation_flags(0x0800_0000);
+    }
+    let out = cmd.output().map_err(|_| "curl est introuvable : impossible de télécharger l'image".to_string())?;
+    if !out.status.success() {
+        return Err(format!("téléchargement impossible ({})", String::from_utf8_lossy(&out.stderr).trim()));
+    }
+    if out.stdout.is_empty() {
+        return Err("réponse vide".into());
+    }
+    Ok(out.stdout)
+}
+
+/// Une adresse web plutôt qu'un fichier ?
+fn is_url(arg: &str) -> bool {
+    arg.starts_with("https://") || arg.starts_with("http://")
+}
+
+/// Nom à annoncer dans la séquence (dernier segment de l'adresse, ou du chemin).
+fn image_name(arg: &str) -> &str {
+    let name = if is_url(arg) {
+        arg.split(['?', '#']).next().unwrap_or(arg).trim_end_matches('/').rsplit('/').next().unwrap_or("")
+    } else {
+        std::path::Path::new(arg).file_name().and_then(|n| n.to_str()).unwrap_or("")
+    };
+    if name.is_empty() {
+        "image"
+    } else {
+        name
+    }
 }
 
 /// Commande à exécuter au démarrage (`-e`, `--command`, `-x`).
@@ -130,16 +181,16 @@ fn main() -> eframe::Result<()> {
             }
         }
         if files.is_empty() {
-            eprintln!("Usage : imgcat [--width 40|50%|300px] image…  (PNG, JPEG, GIF, WebP, BMP, ICO, SVG)");
+            eprintln!("Usage : imgcat [--width 40|50%|300px] image…  (fichier ou adresse https://)");
             std::process::exit(2);
         }
         let mut failed = false;
         for file in files {
-            match std::fs::read(&file) {
+            let read = if is_url(&file) { fetch_url(&file) } else { std::fs::read(&file).map_err(|e| e.to_string()) };
+            match read {
                 Ok(bytes) => {
                     use std::io::Write;
-                    let name = std::path::Path::new(&file).file_name().and_then(|n| n.to_str()).unwrap_or("image");
-                    let _ = std::io::stdout().write_all(images::iterm_sequence(&bytes, name, width.as_deref()).as_bytes());
+                    let _ = std::io::stdout().write_all(images::iterm_sequence(&bytes, image_name(&file), width.as_deref()).as_bytes());
                 }
                 Err(e) => {
                     eprintln!("imgcat : {file} : {e}");
@@ -299,6 +350,20 @@ mod tests {
         let a = args(&["novaterm", "--working-directory=/tmp/x"]);
         assert_eq!(arg_value(&a, "--working-directory").as_deref(), Some("/tmp/x"));
         assert_eq!(arg_value(&a, "--cwd"), None);
+    }
+
+    #[test]
+    fn urls_and_names() {
+        assert!(is_url("https://picsum.photos/seed/1/150"));
+        assert!(is_url("http://exemple.fr/a.png"));
+        assert!(!is_url("/tmp/photo.png"));
+        assert!(!is_url("photo.png"));
+        // Nom annoncé dans la séquence : dernier segment, sans la requête.
+        assert_eq!(image_name("https://picsum.photos/seed/1/150"), "150");
+        assert_eq!(image_name("https://exemple.fr/chat.png?taille=2#x"), "chat.png");
+        assert_eq!(image_name("https://exemple.fr/dossier/"), "dossier");
+        assert_eq!(image_name("/tmp/photo.png"), "photo.png");
+        assert_eq!(image_name("https://exemple.fr"), "exemple.fr");
     }
 
     #[test]

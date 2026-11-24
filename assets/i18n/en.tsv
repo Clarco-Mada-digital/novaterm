@@ -694,3 +694,16 @@ Masquer mots de passe, jetons et clés avant l'envoi	Hide passwords, tokens and 
 Lignes de sortie envoyées au maximum	Maximum output lines sent
 Bouton « ✨ » au survol des commandes et dans les astuces	"✨" button when hovering commands and in tips
 Seules les dernières lignes de la commande concernée sont envoyées, jamais tout le terminal.	Only the last lines of the command concerned are sent, never the whole terminal.
+Mis en forme	Formatted
+Texte d'origine	Original text
+Copier ce qui est affiché	Copy what is shown
+{} lignes	{} lines
+Cette commande n'a rien affiché	This command printed nothing
+Aucune commande terminée	No finished command
+Voir la sortie en grand (JSON mis en forme)	View output full size (JSON formatted)
+🔍 Sortie de « {} »	🔍 Output of “{}”
+Coloré	Highlighted
+Chercher dans la sortie	Search in output
+Occurrence précédente	Previous match
+Occurrence suivante	Next match
+aucune occurrence	no match
