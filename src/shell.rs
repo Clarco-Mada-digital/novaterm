@@ -238,12 +238,18 @@ pub fn shell_name(shell_path: &str) -> String {
 /// Touches qui vident la ligne en cours avant d'y insérer une commande.
 /// Ctrl+E (fin de ligne) puis Ctrl+U (effacer) : compris par readline, zle, fish,
 /// reedline… mais PowerShell et cmd les affichaient tels quels (« ^E^U ») : pour eux,
-/// Échap vide la ligne (PSReadLine et cmd). Pour un shell inconnu, on n'envoie rien :
-/// mieux vaut ajouter à la ligne que la casser.
+/// Ctrl+Fin puis Ctrl+Début, que PSReadLine et l'éditeur de ligne de la console
+/// utilisent pour effacer la fin puis le début de la ligne.
+///
+/// Surtout pas Échap : ConPTY relit « Échap » suivi d'une lettre comme un
+/// Alt+lettre. Envoyé juste avant la commande, il avalait donc sa première
+/// lettre (Échap puis « df -h » = Alt+d, puis « f -h »).
+/// Pour un shell inconnu, on n'envoie rien : mieux vaut ajouter à la ligne que
+/// la casser.
 pub fn line_clear_keys(shell_path: &str) -> &'static [u8] {
     match shell_name(shell_path).as_str() {
         "bash" | "zsh" | "fish" | "sh" | "dash" | "ksh" | "mksh" | "yash" | "nu" | "elvish" | "xonsh" | "wsl" | "ubuntu" | "debian" => b"\x05\x15",
-        "pwsh" | "powershell" | "cmd" => b"\x1b",
+        "pwsh" | "powershell" | "cmd" => b"\x1b[1;5F\x1b[1;5H",
         _ => b"",
     }
 }
@@ -375,11 +381,11 @@ mod tests {
         assert_eq!(line_clear_keys("/bin/zsh"), b"\x05\x15");
         assert_eq!(line_clear_keys("/usr/bin/bash"), b"\x05\x15");
         assert_eq!(line_clear_keys("C:\\Windows\\System32\\wsl.exe"), b"\x05\x15");
-        // Échap vide la ligne dans PSReadLine et dans cmd.
-        assert_eq!(line_clear_keys("pwsh.exe"), b"\x1b");
-        assert_eq!(line_clear_keys("C:\\Program Files\\PowerShell\\7\\pwsh.exe"), b"\x1b");
-        assert_eq!(line_clear_keys("powershell.exe"), b"\x1b");
-        assert_eq!(line_clear_keys("cmd.exe"), b"\x1b");
+        // Ctrl+Fin puis Ctrl+Début, jamais Échap (ConPTY en ferait un Alt+lettre).
+        assert_eq!(line_clear_keys("pwsh.exe"), b"\x1b[1;5F\x1b[1;5H");
+        assert_eq!(line_clear_keys("C:\\Program Files\\PowerShell\\7\\pwsh.exe"), b"\x1b[1;5F\x1b[1;5H");
+        assert_eq!(line_clear_keys("powershell.exe"), b"\x1b[1;5F\x1b[1;5H");
+        assert_eq!(line_clear_keys("cmd.exe"), b"\x1b[1;5F\x1b[1;5H");
         assert!(line_clear_keys("/usr/bin/inconnu").is_empty());
     }
 
