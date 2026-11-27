@@ -55,7 +55,9 @@ pub fn encode_key(key: Key, mods: &Modifiers, app_cursor: bool) -> Option<Vec<u8
         Key::PageDown => Some(tilde_key(6, mods)),
         Key::Enter => Some(b"\r".to_vec()),
         Key::Tab => Some(if mods.shift { b"\x1b[Z".to_vec() } else { b"\t".to_vec() }),
-        Key::Backspace => Some(if mods.ctrl { vec![0x08] } else { vec![0x7f] }),
+        // Avec Alt, le préfixe « \e » est ajouté plus bas comme pour les autres
+        // touches : le shell y voit « supprimer le mot précédent ».
+        Key::Backspace => Some(if mods.ctrl && !mods.alt { vec![0x08] } else { vec![0x7f] }),
         Key::Escape => Some(vec![0x1b]),
         Key::F1 => Some(f_key(b'P', mods)),
         Key::F2 => Some(f_key(b'Q', mods)),
@@ -254,6 +256,8 @@ mod tests {
     fn ctrl_digits() {
         assert_eq!(encode_key(Key::Num2, &mods(true, false, false), false), Some(vec![0]));
         assert_eq!(encode_key(Key::Backspace, &mods(true, false, false), false), Some(vec![8]));
+        // Alt+Retour : séquence d'échappement, et non un simple DEL.
+        assert_eq!(encode_key(Key::Backspace, &mods(false, true, false), false), Some(vec![0x1b, 0x7f]));
     }
 
     #[test]

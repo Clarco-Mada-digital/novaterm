@@ -717,3 +717,6 @@ Configuration importée	Configuration imported
 Configuration exportée : {}	Configuration exported: {}
 Export impossible : {}	Export failed: {}
 Dossier personnel introuvable	Home folder not found
+Édition de la ligne : Ctrl+Retour efface le mot précédent, Ctrl+Suppr le mot suivant, Ctrl+Maj+Suppr toute la ligne. Fonctionne avec bash, zsh, fish, nu et PowerShell (cmd ne sait pas éditer par mot).	Line editing: Ctrl+Backspace deletes the previous word, Ctrl+Delete the next one, Ctrl+Shift+Delete the whole line. Works with bash, zsh, fish, nu and PowerShell (cmd has no word editing).
+✨ suggestions : par le shell	✨ suggestions: from the shell
+⚠ Le shell fournit déjà des suggestions (zsh-autosuggestions, prédiction PSReadLine…) :                  NovaTerm le laisse faire dans ce panneau.	⚠ The shell already provides suggestions (zsh-autosuggestions, PSReadLine prediction…): NovaTerm stands back in this pane.

@@ -756,7 +756,12 @@ fn page_terminal(ui: &mut egui::Ui, config: &mut Config) {
     card(ui, t("Clavier"), |ui| {
         ui.checkbox(&mut config.smart_copy, t("Ctrl+C copie s'il y a une sélection (sinon interrompt)"));
         ui.checkbox(&mut config.ctrl_v_paste, t("Ctrl+V colle (au lieu d'envoyer ^V)"));
-
+        hint(
+            ui,
+            "Édition de la ligne : Ctrl+Retour efface le mot précédent, Ctrl+Suppr le mot suivant, \
+             Ctrl+Maj+Suppr toute la ligne. Fonctionne avec bash, zsh, fish, nu et PowerShell \
+             (cmd ne sait pas éditer par mot).",
+        );
     });
     card(ui, t("Sélection"), |ui| {
         ui.horizontal(|ui| {
@@ -887,7 +892,11 @@ fn page_suggestions(ui: &mut egui::Ui, config: &mut Config, info: &SettingsInfo,
              (bash : blocs et notifications ; suggestions en direct avec zsh uniquement)",
         );
         let (txt, color) = if info.suggest_conflict {
-            ("⚠ zsh-autosuggestions est déjà actif : NovaTerm le laisse faire dans ce panneau.", Color32::from_rgb(230, 180, 90))
+            (
+                "⚠ Le shell fournit déjà des suggestions (zsh-autosuggestions, prédiction PSReadLine…) : \
+                 NovaTerm le laisse faire dans ce panneau.",
+                Color32::from_rgb(230, 180, 90),
+            )
         } else if info.integration_active {
             ("✔ Active dans le panneau actuel.", Color32::from_rgb(110, 200, 120))
         } else {

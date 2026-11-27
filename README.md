@@ -284,6 +284,9 @@ Tous sont modifiables dans Paramètres → Raccourcis (« + » puis la combinais
 | Ctrl+→ | Accepter un mot de la suggestion |
 | Ctrl+Alt+C | Copier la sortie de la dernière commande |
 | Ctrl+Alt+O | Voir la sortie en grand (JSON mis en forme) |
+| Ctrl+Retour | Effacer le mot précédent |
+| Ctrl+Suppr | Effacer le mot suivant |
+| Ctrl+Maj+Suppr | Effacer toute la ligne |
 | Ctrl+Alt+S / Ctrl+Alt+P | Snippets / profils |
 | Ctrl+Insert, Maj+Insert | Copier, coller |
 | Ctrl+Maj+S | Coller la sélection (PRIMARY) |

@@ -2078,7 +2078,10 @@ impl NovaApp {
             return;
         }
         let app_cursor = pane.term.mode().contains(TermMode::APP_CURSOR);
-        if let Some(bytes) = input::encode_key(key, &mods, app_cursor) {
+        // Suppression par mot et vidage de ligne : propres au shell, donc traités
+        // avant l'encodage générique.
+        let bytes = pane.edit_sequence(key, &mods).map(<[u8]>::to_vec).or_else(|| input::encode_key(key, &mods, app_cursor));
+        if let Some(bytes) = bytes {
             // Taper efface la sélection (comme la plupart des terminaux).
             if pane.term.selection.is_some() && !matches!(key, Key::Escape) {
                 pane.term.selection = None;
@@ -2089,7 +2092,8 @@ impl NovaApp {
         for other in self.input_targets().into_iter().filter(|o| *o != id) {
             if let Some(p) = self.panes.get_mut(&other) {
                 let app_cursor = p.term.mode().contains(TermMode::APP_CURSOR);
-                if let Some(bytes) = input::encode_key(key, &mods, app_cursor) {
+                let bytes = p.edit_sequence(key, &mods).map(<[u8]>::to_vec).or_else(|| input::encode_key(key, &mods, app_cursor));
+                if let Some(bytes) = bytes {
                     p.write_input(&bytes);
                 }
             }
@@ -3623,8 +3627,14 @@ impl NovaApp {
                 info.push_str("  ·  ZOOM");
             }
         }
-        if self.config.suggestions && self.focused_id().and_then(|id| self.panes.get(&id)).is_some_and(|p| p.integration && !p.suggest_conflict) {
-            info.push_str("  ·  ✨ suggestions");
+        if self.config.suggestions {
+            match self.focused_id().and_then(|id| self.panes.get(&id)) {
+                // Le shell fournit déjà des suggestions : NovaTerm s'efface. Le dire,
+                // car sinon la fonctionnalité semble simplement cassée.
+                Some(p) if p.suggest_conflict => info.push_str(&format!("  ·  {}", t("✨ suggestions : par le shell"))),
+                Some(p) if p.integration => info.push_str("  ·  ✨ suggestions"),
+                _ => {}
+            }
         }
         if self.tabs.get(self.active).is_some_and(|t| t.broadcast) {
             info.push_str("  ·  📡 DIFFUSION");

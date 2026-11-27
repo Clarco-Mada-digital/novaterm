@@ -156,6 +156,9 @@ pub struct Pane {
     prompt_end: Option<(i64, usize)>,
     /// Touches pour vider la ligne avant d'insérer une commande (selon le shell).
     pub line_clear: &'static [u8],
+    /// Touches de suppression par mot (arrière, avant), selon le shell.
+    word_back: &'static [u8],
+    word_forward: &'static [u8],
     /// Un autre plugin de suggestions est actif dans ce shell.
     pub suggest_conflict: bool,
     /// Commandes exécutées depuis le dernier passage (pour l'historique).
@@ -196,7 +199,7 @@ impl Pane {
         let custom = config.shell.trim();
         let mut words = platform::split_args(custom);
         let shell_path = if words.is_empty() { platform::default_shell() } else { words.remove(0) };
-        let launch = shell::launch_for(&shell_path, config.shell_integration);
+        let launch = shell::launch_for(&shell_path, config.shell_integration, config.suggestions);
         let mut cmd = if launch.has_args() {
             // Arguments de l'intégration *autour* de ceux de l'utilisateur.
             let mut c = CommandBuilder::new(&shell_path);
@@ -302,6 +305,8 @@ impl Pane {
             nova_protocol: false,
             prompt_end: None,
             line_clear: shell::line_clear_keys(&shell_path),
+            word_back: shell::word_delete_keys(&shell_path, false),
+            word_forward: shell::word_delete_keys(&shell_path, true),
             suggest_conflict: false,
             executed: Vec::new(),
             cwd_reported: None,
@@ -901,6 +906,24 @@ impl Pane {
             }
         };
         Rgb { r: c[0], g: c[1], b: c[2] }
+    }
+
+    /// Raccourci d'édition de ligne pour cette touche, s'il y en a un.
+    ///
+    /// Supprimer mot par mot ou vider la ligne dépend du shell : ces raccourcis sont
+    /// traduits ici plutôt que dans l'encodage générique des touches, qui ne sait
+    /// pas à quoi il parle.
+    pub fn edit_sequence(&self, key: egui::Key, mods: &egui::Modifiers) -> Option<&'static [u8]> {
+        use egui::Key;
+        let seq = match key {
+            // Ctrl+Suppr vide la ligne avec Maj, sinon supprime le mot suivant.
+            Key::Delete if mods.ctrl && mods.shift => self.line_clear,
+            Key::Delete if mods.ctrl => self.word_forward,
+            Key::Backspace if mods.ctrl && mods.shift => self.line_clear,
+            Key::Backspace if mods.ctrl || mods.alt => self.word_back,
+            _ => return None,
+        };
+        (!seq.is_empty()).then_some(seq)
     }
 
     pub fn write_input(&mut self, bytes: &[u8]) {

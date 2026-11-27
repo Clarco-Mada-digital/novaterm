@@ -145,9 +145,22 @@ try {
   }
 } catch { }
 
-# Suggestions deja fournies par PSReadLine : NovaTerm s'efface.
+# Suppression par mot : NovaTerm envoie les raccourcis de readline (Alt+Retour,
+# Alt+D). PSReadLine les associe ici explicitement, sans dependre de son mode.
 try {
-  if ((Get-PSReadLineOption).PredictionSource -ne 'None') {
+  Set-PSReadLineKeyHandler -Chord 'Alt+Backspace' -Function BackwardKillWord -ErrorAction Stop
+  Set-PSReadLineKeyHandler -Chord 'Alt+d' -Function KillWord -ErrorAction Stop
+} catch { }
+
+# Suggestions. PSReadLine 2.2 et suivants predisent par defaut ('History') : son
+# texte gris s'ecrit APRES le curseur, ce qui empeche NovaTerm de relire la ligne
+# en cours, et deux textes fantomes se disputeraient l'affichage. Quand NovaTerm
+# fournit les suggestions, on coupe donc la prediction pour CETTE session - le
+# reglage enregistre de l'utilisateur n'est pas touche. Sinon, on s'efface.
+try {
+  if ($env:NOVATERM_SUGGESTIONS -eq '1') {
+    Set-PSReadLineOption -PredictionSource None
+  } elseif ((Get-PSReadLineOption).PredictionSource -ne 'None') {
     [Console]::Write("$($global:__novatermEsc)]6973;X$($global:__novatermEsc)\")
   }
 } catch { }
@@ -246,6 +259,33 @@ pub fn shell_name(shell_path: &str) -> String {
 /// lettre (Échap puis « df -h » = Alt+d, puis « f -h »).
 /// Pour un shell inconnu, on n'envoie rien : mieux vaut ajouter à la ligne que
 /// la casser.
+/// Shell dont la ligne de saisie comprend les raccourcis d'édition d'Emacs
+/// (readline, zle, reedline, PSReadLine…).
+fn edits_like_readline(name: &str) -> bool {
+    matches!(
+        name,
+        "bash" | "zsh" | "fish" | "sh" | "dash" | "ksh" | "mksh" | "yash" | "nu" | "elvish" | "xonsh" | "wsl" | "ubuntu"
+            | "debian" | "pwsh" | "powershell"
+    )
+}
+
+/// Touches envoyées pour supprimer un mot entier.
+///
+/// `\e\x7f` (Alt+Retour) et `\ed` (Alt+D) sont les raccourcis historiques de
+/// readline, compris par bash, zsh, fish, nu… et par PSReadLine, à qui notre script
+/// d'intégration les associe explicitement. cmd n'a pas d'édition par mot : on ne
+/// lui envoie rien plutôt qu'une séquence qu'il afficherait telle quelle.
+pub fn word_delete_keys(shell_path: &str, forward: bool) -> &'static [u8] {
+    if !edits_like_readline(&shell_name(shell_path)) {
+        return b"";
+    }
+    if forward {
+        b"\x1bd"
+    } else {
+        b"\x1b\x7f"
+    }
+}
+
 pub fn line_clear_keys(shell_path: &str) -> &'static [u8] {
     match shell_name(shell_path).as_str() {
         "bash" | "zsh" | "fish" | "sh" | "dash" | "ksh" | "mksh" | "yash" | "nu" | "elvish" | "xonsh" | "wsl" | "ubuntu" | "debian" => b"\x05\x15",
@@ -256,8 +296,10 @@ pub fn line_clear_keys(shell_path: &str) -> &'static [u8] {
 
 /// Prépare le lancement du shell. `integration` à faux : on se limite au strict
 /// nécessaire (bannière PowerShell, chemin des binaires), sans aucun hook.
-pub fn launch_for(shell_path: &str, integration: bool) -> Launch {
+pub fn launch_for(shell_path: &str, integration: bool, suggestions: bool) -> Launch {
     let mut launch = Launch::default();
+    // Lu par le script PowerShell : NovaTerm suggère, ou laisse PSReadLine le faire.
+    launch.env.push(("NOVATERM_SUGGESTIONS".into(), if suggestions { "1" } else { "0" }.into()));
     if let Some(exe) = crate::appimage::stable_exe() {
         launch.env.push(("NOVATERM_BIN".into(), exe.display().to_string()));
         // Binaire console, seul capable d'écrire dans le terminal sous Windows.
@@ -390,6 +432,18 @@ mod tests {
     }
 
     #[test]
+    fn word_delete_per_shell() {
+        // Raccourcis readline, compris aussi par PSReadLine grâce à notre script.
+        assert_eq!(word_delete_keys("/bin/zsh", false), b"\x1b\x7f");
+        assert_eq!(word_delete_keys("/bin/zsh", true), b"\x1bd");
+        assert_eq!(word_delete_keys("pwsh.exe", false), b"\x1b\x7f");
+        assert_eq!(word_delete_keys("C:\\Program Files\\PowerShell\\7\\pwsh.exe", true), b"\x1bd");
+        // cmd n'a pas d'édition par mot : mieux vaut ne rien envoyer que du charabia.
+        assert!(word_delete_keys("cmd.exe", false).is_empty());
+        assert!(word_delete_keys("/usr/bin/inconnu", true).is_empty());
+    }
+
+    #[test]
     fn names() {
         assert_eq!(shell_name("C:\\Program Files\\Git\\bin\\bash.exe"), "bash");
         assert_eq!(shell_name("\"C:\\Windows\\System32\\cmd.exe\""), "cmd");
@@ -398,7 +452,7 @@ mod tests {
 
     #[test]
     fn powershell_launch() {
-        let l = launch_for("C:\\Program Files\\PowerShell\\7\\pwsh.exe", true);
+        let l = launch_for("C:\\Program Files\\PowerShell\\7\\pwsh.exe", true, true);
         // Les arguments de l'utilisateur restent avant « -EncodedCommand ».
         let args = l.args_around(&["-NoProfile".to_string()]);
         assert_eq!(args[0], "-NoLogo");
@@ -411,12 +465,12 @@ mod tests {
         assert!(decoded.contains("function global:prompt"), "{decoded}");
         assert!(decoded.contains("6973;B"), "la fin de prompt doit être signalée");
         // Git Bash : « --login -i » n'est plus perdu.
-        let l = launch_for("C:\\Program Files\\Git\\bin\\bash.exe", true);
+        let l = launch_for("C:\\Program Files\\Git\\bin\\bash.exe", true, true);
         let args = l.args_around(&["--login".to_string(), "-i".to_string()]);
         assert_eq!(args[0], "--rcfile");
         assert_eq!(args[3..], ["--login", "-i"]);
         // cmd : prompt enrichi, aucun argument (le shell reste interactif).
-        let l = launch_for("cmd.exe", true);
+        let l = launch_for("cmd.exe", true, true);
         assert!(!l.has_args());
         let prompt = l.env.iter().find(|(k, _)| k == "PROMPT").map(|(_, v)| v.clone()).unwrap_or_default();
         assert!(prompt.starts_with("$e]6973;A$e\\") && prompt.ends_with("$e]6973;B$e\\"), "{prompt}");
