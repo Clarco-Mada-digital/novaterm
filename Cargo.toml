@@ -1,6 +1,6 @@
 [package]
 name = "novaterm"
-version = "0.3.1"
+version = "0.3.2"
 edition = "2021"
 description = "Terminal moderne : onglets, splits, suggestions, blocs de commandes, images, thèmes"
 license = "MIT"
